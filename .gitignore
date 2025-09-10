@@ -1,0 +1,49 @@
+# Android / Gradle
+.gradle/
+build/
+**/build/
+
+# Gradle Wrapper (keep JAR tracked)
+!gradle/wrapper/gradle-wrapper.jar
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Local configuration
+local.properties
+
+# Logs / Dumps
+*.log
+*.hprof
+
+# Outputs / Packages
+*.apk
+*.ap_
+*.aab
+
+# NDK / CMake
+.externalNativeBuild/
+.cxx/
+
+# Java/Kotlin build artifacts
+*.class
+*.kotlin_module
+*.dex
+
+# Captures
+captures/
+
+# Keystore (never commit signing keys)
+*.keystore
+*.jks
+.signing/
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+

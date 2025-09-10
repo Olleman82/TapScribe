@@ -1,0 +1,61 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="se.olle.rostbubbla">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="true"
+        android:label="TapScribe"
+        android:icon="@mipmap/ic_launcher_tapscribe"
+        android:roundIcon="@mipmap/ic_launcher_tapscribe_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Rostbubbla">
+
+        <activity android:name=".ui.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".ui.SpeechUiActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true"
+            android:taskAffinity="se.olle.rostbubbla.speechui" />
+
+        <service
+            android:name=".overlay.OverlayService"
+            android:exported="false"
+            android:foregroundServiceType="microphone">
+        </service>
+
+        <service
+            android:name=".access.PasteAccessibilityService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_config" />
+        </service>
+
+        <receiver android:name=".ui.PttReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="se.olle.rostbubbla.ACTION_PTT" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+</manifest>
