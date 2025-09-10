@@ -90,7 +90,7 @@ class OverlayService : Service() {
     try {
       wm.addView(bubble, params)
     } catch (t: Throwable) {
-      // Om något redan sitter kvar, försök städa och avsluta
+      // If something is already there, try to clean up and exit
       try { bubble?.let { wm.removeViewImmediate(it) } } catch (_: Throwable) {}
       bubble = null
       stopSelf()
@@ -107,7 +107,7 @@ class OverlayService : Service() {
 
   private fun showMenu(anchor: View) {
     PopupMenu(this, anchor).apply {
-      menu.add(0, 1, 0, "Stäng bubbla")
+      menu.add(0, 1, 0, "Close Bubble")
       setOnMenuItemClickListener { item ->
         when (item.itemId) {
           1 -> { hide(); true }
@@ -119,7 +119,7 @@ class OverlayService : Service() {
   }
 
   override fun onDestroy() {
-    // Säkerställ städning om systemet dödar tjänsten
+    // Ensure cleanup if system kills the service
     try { bubble?.let { wm.removeViewImmediate(it) } } catch (_: Throwable) {}
     bubble = null
     scope.cancel()
@@ -135,7 +135,7 @@ class OverlayService : Service() {
     return NotificationCompat.Builder(this, chId)
       // Använd en icke-adaptiv drawable som small icon för notiser
       .setSmallIcon(R.drawable.ic_launcher_foreground)
-      .setContentTitle("Mikrofonbubbla aktiv")
+      .setContentTitle("Microphone Bubble Active")
       .setOngoing(true)
       .build()
   }
@@ -143,14 +143,14 @@ class OverlayService : Service() {
   private suspend fun runHeadlessFlow(anchor: View) {
     val apiKey = getSharedPreferences("settings", MODE_PRIVATE).getString("gemini_api_key", "").orEmpty()
     if (apiKey.isBlank()) {
-      Toast.makeText(this, "Fyll i API-nyckel först", Toast.LENGTH_SHORT).show(); return
+      Toast.makeText(this, "Fill in API key first", Toast.LENGTH_SHORT).show(); return
     }
     // 1) Lyssna via Google UI (transparent aktivitet) och vänta på resultat
     val raw = withContext(Dispatchers.Main) { listenViaUi() }.orEmpty()
-    if (raw.isBlank()) { Toast.makeText(this, "Ingen röst fångades", Toast.LENGTH_SHORT).show(); return }
+    if (raw.isBlank()) { Toast.makeText(this, "No voice captured", Toast.LENGTH_SHORT).show(); return }
     // 2) Välj prompt (popup meny)
     val prompts = withContext(Dispatchers.IO) { dao.all() }
-    if (prompts.isEmpty()) { Toast.makeText(this, "Inga prompter", Toast.LENGTH_SHORT).show(); return }
+    if (prompts.isEmpty()) { Toast.makeText(this, "No prompts", Toast.LENGTH_SHORT).show(); return }
     val picked: Prompt = CompletableDeferred<Prompt?>().also { def ->
       val menu = PopupMenu(this, anchor)
       prompts.forEachIndexed { idx, p -> menu.menu.add(0, idx, idx, p.title) }
@@ -173,17 +173,17 @@ class OverlayService : Service() {
           .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
       } catch (t: Throwable) { "" }
     }
-    if (reply.isBlank()) { Toast.makeText(this, "AI-svar tomt", Toast.LENGTH_SHORT).show(); return }
+    if (reply.isBlank()) { Toast.makeText(this, "AI response empty", Toast.LENGTH_SHORT).show(); return }
     val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("AI", reply))
     val autoPaste = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("auto_paste", false)
     if (autoPaste) {
       val ok = se.olle.rostbubbla.access.PasteAccessibilityService.instance?.pasteText(reply) ?: false
       if (!ok) {
-        // Låt systemets egna clipboard‑notis räcka; ingen extra toast
+        // Let the system's own clipboard notification suffice; no extra toast
       }
     } else {
-      // Ingen extra toast; systemet visar clipboard‑notis
+      // No extra toast; system shows clipboard notification
     }
   }
 
@@ -249,7 +249,7 @@ class DragTouchListener(
         return false
       }
       MotionEvent.ACTION_UP -> {
-        // Om vi dragit, konsumera UP så att klick inte triggas
+        // If we dragged, consume UP so click doesn't trigger
         return hasMoved
       }
     }

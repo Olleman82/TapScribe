@@ -13,6 +13,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -134,7 +135,7 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           apiKey = it
           prefs.edit().putString("gemini_api_key", apiKey).apply()
         },
-        label = { Text("Gemini API-nyckel") },
+        label = { Text("Gemini API Key") },
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
         visualTransformation = PasswordVisualTransformation(),
@@ -149,57 +150,57 @@ fun AppUI(vm: MainViewModel = viewModel()) {
             try {
               ctx.startForegroundService(Intent(ctx, OverlayService::class.java))
             } catch (t: Throwable) {
-              Toast.makeText(ctx, "Kan inte starta bubbla: ${t.message}", Toast.LENGTH_SHORT).show()
+              Toast.makeText(ctx, "Cannot start bubble: ${t.message}", Toast.LENGTH_SHORT).show()
             }
           }
-        }) { Text("Starta bubbla") }
+        }) { Text("Start Bubble") }
 
-        Button(onClick = { ctx.stopService(Intent(ctx, OverlayService::class.java)) }) { Text("Stoppa bubbla") }
+        Button(onClick = { ctx.stopService(Intent(ctx, OverlayService::class.java)) }) { Text("Stop Bubble") }
       }
 
       Button(onClick = {
         if (!micPerm.status.isGranted) micPerm.launchPermissionRequest()
         notifPerm?.let { if (!it.status.isGranted) it.launchPermissionRequest() }
-      }) { Text("Begär behörigheter") }
+      }) { Text("Request Permissions") }
 
-      // Inställning: Klistra automatiskt i fokuserat textfält via tillgänglighetstjänst
+      // Setting: Auto-paste in focused text field via accessibility service
       var autoPaste by remember { mutableStateOf(prefs.getBoolean("auto_paste", false)) }
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Klistra automatiskt i aktivt textfält", modifier = Modifier.weight(1f))
-        IconButton(onClick = { showAutoSteps = true }) { Icon(Icons.Outlined.Info, contentDescription = "Hjälp") }
+        Text("Auto-paste in active text field", modifier = Modifier.weight(1f))
+        IconButton(onClick = { showAutoSteps = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
         Switch(checked = autoPaste, onCheckedChange = {
           autoPaste = it
           prefs.edit().putBoolean("auto_paste", autoPaste).apply()
         })
       }
-      Text("Klistrar in AI‑svaret direkt i textfältet som har fokus.", style = MaterialTheme.typography.bodySmall)
+      Text("Pastes AI response directly into the text field that has focus.", style = MaterialTheme.typography.bodySmall)
       Divider()
-      // hjälp öppnas i en liten dialog via i-knappen
+      // help opens in a small dialog via i-button
 
       var selectedPrompt by remember { mutableStateOf<String?>(null) }
 
-      // Redigeringsdialog state (måste deklareras innan första användning)
+      // Edit dialog state (must be declared before first use)
       val showEditId = remember { mutableStateOf<se.olle.rostbubbla.data.Prompt?>(null) }
       var menuFor by remember { mutableStateOf<String?>(null) }
 
-      // Kontextmeny state för långtryck på chips (måste deklareras före användning nedan)
+      // Context menu state for long press on chips (must be declared before use below)
       data class PromptMenu(val title: String, val isBuiltIn: Boolean)
       var promptMenu by remember { mutableStateOf<PromptMenu?>(null) }
 
-      Text("Prompter", style = MaterialTheme.typography.titleMedium)
-      // Alla prompter kommer från DB (seedas första gången)
+      Text("Prompts", style = MaterialTheme.typography.titleMedium)
+      // All prompts come from DB (seeded first time)
       var customPrompts by remember { mutableStateOf<List<se.olle.rostbubbla.data.Prompt>>(emptyList()) }
       LaunchedEffect(Unit) {
         val seeded = prefs.getBoolean("prompts_seeded_v1", false)
         if (!seeded) {
           vm.upsertPromptByTitle(
-            "Skriv mejl",
-            "Du får text nedan som är talat in via transkribering. Det betyder att en del ord antagligen blivit feltranskriberade och att punkter och kommatecken ibland kan hamna på fel ställen. Om det står -Smiley- eller liknande är det troligt att jag vill att det ska vara en smiley där.Din uppgift: Utifrån texten. Följ tonaliteten och följden i texten så väl du kan men formatera det som en färdig text för ett mail med bra formatering, punkter etc på rätt ställen. Du får göra små förändringar för att det ska bli grammatiskt korrekt eller för att ta bort ord som inte verkar logiska eller inte verkar höra till mailen. Om användaren inte ger en hälsningsfras på slutet så avslutar du alltid med Mvh Olle.\n\nSvara ENDAST med mailtexten",
+            "Write Email",
+            "You will receive text below that has been spoken and transcribed. This means some words may have been incorrectly transcribed and periods and commas may sometimes be in the wrong places. If it says -Smiley- or similar, it's likely that I want a smiley there. Your task: Based on the text. Follow the tone and flow of the text as well as you can but format it as a finished text for an email with good formatting, periods etc. in the right places. You may make small changes to make it grammatically correct or to remove words that don't seem logical or don't seem to belong to the email. If the user doesn't provide a closing greeting, always end with Best regards Olle.\n\nRespond ONLY with the email text",
             null
           )
           vm.upsertPromptByTitle(
             "WhatsApp",
-            "skriv ett informellt meddelande av nedan transkriberade text. det ska skickas på whatsapp till vänner familj. tänk på att texten transkriberats och att något ord kan ha blivit fel. försök förstå användarens avsikt utifrån kontexten isåfall. lägg till någon smiley (gubbar samt tummen upp inte massa symboler, bilar etc) om och när det passar. försök att skriva så nära det som användaren säger i övrigt. inled enbart med hej/tjena etc OM användaren faktiskt inlett så.\n\nsvara endast med whatsapp chattmeddelandet - inget annat!",
+            "write an informal message from the transcribed text below. it should be sent on whatsapp to friends family. keep in mind that the text has been transcribed and some word may have been wrong. try to understand the user's intention from the context if so. add some smiley (people and thumbs up not lots of symbols, cars etc) if and when it fits. try to write as close to what the user says otherwise. only start with hi/hey etc IF the user actually started that way.\n\nrespond only with whatsapp chat message - nothing else!",
             null
           )
           prefs.edit().putBoolean("prompts_seeded_v1", true).apply()
@@ -410,24 +411,24 @@ fun AppUI(vm: MainViewModel = viewModel()) {
     AlertDialog(
       onDismissRequest = { showAbout = false },
       confirmButton = { TextButton(onClick = { showAbout = false }) { Text("OK") } },
-      title = { Text("Om TapScribe") },
+      title = { Text("About TapScribe") },
       text = {
         val ctx = LocalContext.current
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("TapScribe – röst till AI‑assistent med flytande mic‑bubbla.")
+          Text("TapScribe – voice to AI assistant with floating mic bubble.")
           Divider()
-          Text("Skapad av", style = MaterialTheme.typography.titleSmall)
+          Text("Created by", style = MaterialTheme.typography.titleSmall)
           Text("Olle Söderqvist")
           Divider()
-          Text("Hämta din Gemini API‑nyckel", style = MaterialTheme.typography.titleSmall)
+          Text("Get your Gemini API key", style = MaterialTheme.typography.titleSmall)
           Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("1) Gå till https://aistudio.google.com")
-            Text("2) Logga in med ditt Google‑konto")
-            Text("3) Klicka på Get API key och skapa ny nyckel")
-            Text("4) Kopiera och klistra in nyckeln i fältet högst upp i appen")
+            Text("1) Go to https://aistudio.google.com")
+            Text("2) Log in with your Google account")
+            Text("3) Click Get API key and create new key")
+            Text("4) Copy and paste the key in the field at the top of the app")
           }
           Divider()
-          Text("Kontakt", style = MaterialTheme.typography.titleSmall)
+          Text("Contact", style = MaterialTheme.typography.titleSmall)
           val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
           val linkedInText = buildAnnotatedString {
             append("LinkedIn: ")
@@ -477,21 +478,55 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           TextButton(onClick = {
             try { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + ctx.packageName))) } catch (_: Throwable) {}
-          }) { Text("Öppna appinställningar") }
+          }) { Text("Open App Settings") }
           TextButton(onClick = {
             try { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Throwable) {}
-          }) { Text("Öppna tillgänglighet") }
-          TextButton(onClick = { showAutoSteps = false }) { Text("Stäng") }
+          }) { Text("Open Accessibility") }
+          TextButton(onClick = { showAutoSteps = false }) { Text("Close") }
         }
       },
-      title = { Text("Aktivera automatisk inklistring") },
+      title = { Text("Enable Auto-Paste") },
       text = {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          Text("För Android 13+: Tillåt först 'Begränsad inställning' för appen:")
-          Text("1) Öppna appinställningar (⋯ → Tillåt begränsad inställning)")
-          Text("2) Gå till Tillgänglighet → Installerade tjänster")
-          Text("3) Aktivera TapScribe: Klistra i fokuserat fält")
-          Text("När detta är på, försöker appen klistra in AI‑svaret direkt i det textfält som har fokus.")
+        LazyColumn(
+          modifier = Modifier.heightIn(max = 400.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+          item {
+            Text("🔒 Important: Accessibility Service Information", 
+                 style = MaterialTheme.typography.titleMedium,
+                 color = MaterialTheme.colorScheme.primary)
+          }
+          
+          item {
+            Text("TapScribe uses Android Accessibility Services to automatically paste AI-generated text into the focused text field.")
+          }
+          
+          item {
+            Text("📋 What the service does:", style = MaterialTheme.typography.titleSmall)
+          }
+          item { Text("• Identifies the text field that has focus") }
+          item { Text("• Pastes AI responses directly into the field") }
+          item { Text("• Saves you from manual copy/paste operations") }
+          
+          item {
+            Text("🔍 Data usage:", style = MaterialTheme.typography.titleSmall)
+          }
+          item { Text("• Only text content that you dictate") }
+          item { Text("• No personal data is collected or shared") }
+          item { Text("• All data is processed locally and via Gemini API") }
+          
+          item {
+            Text("⚙️ Activation steps for Android 13+:", style = MaterialTheme.typography.titleSmall)
+          }
+          item { Text("1) Open app settings (⋯ → Allow restricted settings)") }
+          item { Text("2) Go to Accessibility → Installed services") }
+          item { Text("3) Enable 'TapScribe: Paste in focused field'") }
+          
+          item {
+            Text("By enabling this service, you consent to TapScribe using Accessibility Services to improve your user experience.", 
+                 style = MaterialTheme.typography.bodySmall,
+                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
         }
       }
     )
