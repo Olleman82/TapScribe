@@ -1,40 +1,40 @@
-# Integritetspolicy för TapScribe (Mic‑bubbla)
+# Privacy Policy for TapScribe (Mic Bubble)
 
-Senast uppdaterad: 2025-09-09
+Last updated: 2024-12-29
 
-Denna app är ett hobbyprojekt och tillhandahålls utan kostnad. Den samlar inte in personuppgifter för egna syften, säljer dem inte vidare och visar inga annonser. Appen fungerar lokalt på din enhet och skickar endast den text du själv dikterar vidare till den AI‑tjänst du konfigurerar (Google Gemini) för att få ett svar. Läs denna policy innan du använder appen.
+This app is a hobby project and is provided free of charge. It does not collect personal data for its own purposes, does not sell it to third parties, and does not display advertisements. The app works locally on your device and only sends the text you dictate to the AI service you configure (Google Gemini) to get a response. Please read this policy before using the app.
 
-## Vilken data hanteras
-- Röstinnehåll: Ditt tal transkriberas till text av Androids inbyggda taligenkänning (eller Google‑UI). Själva ljudet hanteras av systemets rösttjänst; denna app sparar inte ljudfiler.
-- Transkriberad text: Den text du just talat kan – efter ditt val – skickas till Googles Gemini API för att generera ett svar. Texten skickas då över internet till Googles servrar. Svaren från API:t visas för dig i appen och kan kopieras/klistras in i andra appar.
-- Egna prompter (databas lokalt): Dina sparade prompter lagras lokalt i appens lokala databas på enheten. De skickas inte någonstans av appen.
-- Urklipp: När du kopierar eller auto‑klistrar använder appen Androids urklippsfunktion för att lägga text i urklipp och – om du aktiverat tillgänglighetstjänsten – försöka klistra in i fokuserat textfält.
+## What data is handled
+- **Voice content**: Your speech is transcribed to text by Android's built-in speech recognition (or Google UI). The audio itself is handled by the system's voice service; this app does not save audio files.
+- **Transcribed text**: The text you just spoke may – at your choice – be sent to Google's Gemini API to generate a response. The text is then sent over the internet to Google's servers. Responses from the API are displayed to you in the app and can be copied/pasted into other apps.
+- **Custom prompts (local database)**: Your saved prompts are stored locally in the app's local database on the device. They are not sent anywhere by the app.
+- **Clipboard**: When you copy or auto-paste, the app uses Android's clipboard function to place text in the clipboard and – if you have enabled the accessibility service – attempt to paste into the focused text field.
 
-## Behörigheter
-- Mikrofon: Krävs för att kunna transkribera tal till text.
-- Visa över andra appar: Krävs för att den flytande mikrofonbubblan ska synas ovanpå andra appar.
-- Tillgänglighetstjänst (valfritt): Om du aktiverar den kan appen försöka klistra in svaret automatiskt i det textfält som har fokus.
-- Internet: Krävs för anrop till AI‑tjänsten (Gemini) och för ev. nätverksfunktioner.
+## Permissions
+- **Microphone**: Required to transcribe speech to text.
+- **Display over other apps**: Required for the floating microphone bubble to appear on top of other apps.
+- **Accessibility service (optional)**: If you enable it, the app can attempt to automatically paste the response into the text field that has focus.
+- **Internet**: Required for calls to the AI service (Gemini) and for any network functions.
 
-## Delning med tredje part
-- Google (Gemini API, taligenkänning): När du använder AI‑funktionen skickas din text till Google enligt deras villkor. Läs Googles integritetspolicy och villkor för respektive tjänst.
+## Sharing with third parties
+- **Google (Gemini API, speech recognition)**: When you use the AI function, your text is sent to Google according to their terms. Please read Google's privacy policy and terms for the respective service.
 
-## Lagringstid
-Appen lagrar inte dina röstinspelningar. Dina prompter ligger kvar lokalt tills du själv tar bort dem eller avinstallerar appen. Urklipp rensas enligt Androids ordinarie beteende eller när du kopierar något nytt.
+## Data retention
+The app does not store your voice recordings. Your prompts remain stored locally until you delete them yourself or uninstall the app. Clipboard content is cleared according to Android's normal behavior or when you copy something new.
 
-## Säkerhet
-Datan skickas till AI‑tjänsten via HTTPS. Ingen ytterligare kryptering tillämpas av appen. Hantera din API‑nyckel varsamt och dela den inte.
+## Security
+Data is sent to the AI service via HTTPS. No additional encryption is applied by the app. Handle your API key carefully and do not share it.
 
-## Dina val
-- Använd appen utan auto‑klistra om du inte vill aktivera tillgänglighetstjänsten.
-- Använd inte AI‑funktionen om du inte vill skicka text till en tredjepart.
-- Radera prompter du inte längre vill ha kvar.
+## Your choices
+- Use the app without auto-paste if you don't want to enable the accessibility service.
+- Don't use the AI function if you don't want to send text to a third party.
+- Delete prompts you no longer want to keep.
 
-## Barn
-Appen är inte avsedd för användare under 13 år.
+## Children
+The app is not intended for users under 13 years of age.
 
-## Kontakt
-Frågor? Skapa ett ärende (issue) i GitHub‑repo eller kontakta utvecklaren via den angivna hemsidan i appen.
+## Contact
+Questions? Create an issue in the GitHub repository or contact the developer via the website specified in the app.
 
 ---
-Denna policy kan uppdateras. Fortsatt användning av appen efter ändringar innebär att du godkänner den uppdaterade policyn.
+This policy may be updated. Continued use of the app after changes means you accept the updated policy.

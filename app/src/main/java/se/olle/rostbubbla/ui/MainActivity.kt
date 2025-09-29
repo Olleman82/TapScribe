@@ -41,12 +41,18 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import retrofit2.HttpException
 import kotlinx.coroutines.CompletableDeferred
 import com.google.accompanist.permissions.*
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import se.olle.rostbubbla.access.PasteAccessibilityService
 import se.olle.rostbubbla.overlay.OverlayService
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import se.olle.rostbubbla.R
 
 class MainActivity : ComponentActivity() {
   val pttFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -100,15 +106,29 @@ class PttReceiver : android.content.BroadcastReceiver() {
 @Composable
 fun AppUI(vm: MainViewModel = viewModel()) {
   val scope = rememberCoroutineScope()
-  // State-variabler för UI
+  // UI state variables
   var result by remember { mutableStateOf("") }
   
-  // Behörigheter
+  // Permissions
   val micPerm = rememberPermissionState(Manifest.permission.RECORD_AUDIO)
   val notifPerm = if (Build.VERSION.SDK_INT >= 33) rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS) else null
+  val multiPerms = rememberMultiplePermissionsState(
+    permissions = buildList {
+      add(Manifest.permission.RECORD_AUDIO)
+      if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+    }
+  )
+  var requestedAll by remember { mutableStateOf(false) }
 
   var showAbout by remember { mutableStateOf(false) }
   var showAutoSteps by remember { mutableStateOf(false) }
+  var showWelcome by remember { mutableStateOf(false) }
+    var showAutoPromptInfo by remember { mutableStateOf(false) }
+    var showGroundingInfo by remember { mutableStateOf(false) }
+    var showThinkingInfo by remember { mutableStateOf(false) }
+  // Prompt-picker dialog state (declared early so other UI can use it)
+  data class PromptPickState(val options: List<String>, val onPick: (String?) -> Unit)
+  var pickState by remember { mutableStateOf<PromptPickState?>(null) }
   Scaffold(
     topBar = {
       TopAppBar(
@@ -117,18 +137,37 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           var menu by remember { mutableStateOf(false) }
           IconButton(onClick = { menu = true }) { Text("⋯") }
           DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-            DropdownMenuItem(text = { Text("Om") }, onClick = { menu = false; showAbout = true })
+            DropdownMenuItem(text = { Text("Getting Started") }, onClick = { menu = false; showWelcome = true })
+            DropdownMenuItem(text = { Text("About") }, onClick = { menu = false; showAbout = true })
           }
         }
       )
     }
   ) { pad ->
-    Column(Modifier.padding(pad).fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      val ctx = LocalContext.current
+    var busy by remember { mutableStateOf(false) }
+    var retryMessage by remember { mutableStateOf<String?>(null) }
+    LazyColumn(Modifier.padding(pad).fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      item {
+        val ctx = LocalContext.current
       val act = ctx as? MainActivity
       val startedHeadless = remember(act) { (act?.intent?.getBooleanExtra("headless", false) == true) }
       val prefs = remember { ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
       var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
+      
+      // All prompts come from DB (seeded first time) - declared early so auto-prompt can use it
+      var customPrompts by remember { mutableStateOf<List<se.olle.rostbubbla.data.Prompt>>(emptyList()) }
+
+      // Multiple permissions (mic + notifications). Overlay handled via Settings screen afterwards
+      var overlayRequested by remember { mutableStateOf(false) }
+      
+      // Check if this is first time user
+      LaunchedEffect(Unit) {
+        val isFirstTime = !prefs.getBoolean("welcome_shown", false)
+        if (isFirstTime) {
+          showWelcome = true
+          prefs.edit().putBoolean("welcome_shown", true).apply()
+        }
+      }
       OutlinedTextField(
         value = apiKey,
         onValueChange = {
@@ -158,11 +197,6 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         Button(onClick = { ctx.stopService(Intent(ctx, OverlayService::class.java)) }) { Text("Stop Bubble") }
       }
 
-      Button(onClick = {
-        if (!micPerm.status.isGranted) micPerm.launchPermissionRequest()
-        notifPerm?.let { if (!it.status.isGranted) it.launchPermissionRequest() }
-      }) { Text("Request Permissions") }
-
       // Setting: Auto-paste in focused text field via accessibility service
       var autoPaste by remember { mutableStateOf(prefs.getBoolean("auto_paste", false)) }
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -175,6 +209,34 @@ fun AppUI(vm: MainViewModel = viewModel()) {
       }
       Text("Pastes AI response directly into the text field that has focus.", style = MaterialTheme.typography.bodySmall)
       Divider()
+      // Auto-prompt setting
+      var autoPromptEnabled by remember { mutableStateOf(prefs.getBoolean("auto_prompt_enabled", false)) }
+      var defaultPromptTitle by remember { mutableStateOf(prefs.getString("auto_prompt_title", "") ?: "") }
+      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Always use selected prompt", modifier = Modifier.weight(1f))
+        IconButton(onClick = { showAutoPromptInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
+        Switch(checked = autoPromptEnabled, onCheckedChange = {
+          autoPromptEnabled = it
+          prefs.edit().putBoolean("auto_prompt_enabled", autoPromptEnabled).apply()
+        })
+      }
+      if (autoPromptEnabled) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Default prompt: ${if (defaultPromptTitle.isBlank()) "(not set)" else defaultPromptTitle}", modifier = Modifier.weight(1f))
+          Button(onClick = {
+            val all = customPrompts.map { it.title }
+            val cont = CompletableDeferred<String?>()
+            pickState = PromptPickState(options = all) { choice -> cont.complete(choice) }
+            scope.launch {
+              val picked = cont.await()
+              if (picked != null) {
+                defaultPromptTitle = picked
+                prefs.edit().putString("auto_prompt_title", picked).apply()
+              }
+            }
+          }) { Text("Change") }
+        }
+      }
       // help opens in a small dialog via i-button
 
       var selectedPrompt by remember { mutableStateOf<String?>(null) }
@@ -188,8 +250,6 @@ fun AppUI(vm: MainViewModel = viewModel()) {
       var promptMenu by remember { mutableStateOf<PromptMenu?>(null) }
 
       Text("Prompts", style = MaterialTheme.typography.titleMedium)
-      // All prompts come from DB (seeded first time)
-      var customPrompts by remember { mutableStateOf<List<se.olle.rostbubbla.data.Prompt>>(emptyList()) }
       LaunchedEffect(Unit) {
         val seeded = prefs.getBoolean("prompts_seeded_v1", false)
         if (!seeded) {
@@ -221,11 +281,11 @@ fun AppUI(vm: MainViewModel = viewModel()) {
               }
             )
             DropdownMenu(expanded = menuFor == item.title, onDismissRequest = { menuFor = null }) {
-              DropdownMenuItem(text = { Text("Redigera") }, onClick = {
+            DropdownMenuItem(text = { Text("Edit") }, onClick = {
                 showEditId.value = item
                 menuFor = null
               })
-              DropdownMenuItem(text = { Text("Ta bort") }, onClick = {
+            DropdownMenuItem(text = { Text("Delete") }, onClick = {
                 scope.launch {
                   vm.deletePrompt(item)
                   customPrompts = vm.prompts()
@@ -238,58 +298,96 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         }
       }
 
-      // (Allt visas samlat ovan)
+      // (All displayed above)
 
       var showAdd by remember { mutableStateOf(false) }
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = { showAdd = true }) { Text("Lägg till prompt") }
+        Button(onClick = { showAdd = true }) { Text("Add Prompt") }
       }
       if (showAdd) {
         var t by remember { mutableStateOf("") }
         var s by remember { mutableStateOf("") }
+        var useSearch by remember { mutableStateOf(false) }
+        var thinkingEnabled by remember { mutableStateOf(false) }
         AlertDialog(
           onDismissRequest = { showAdd = false },
           confirmButton = {
             TextButton(onClick = {
               scope.launch {
-                vm.addPrompt(t, s, null)
+                vm.addPromptExtended(t, s, null, useSearch, null, thinkingEnabled)
                 customPrompts = vm.prompts()
                 showAdd = false
               }
-            }) { Text("Spara") }
+            }) { Text("Save") }
           },
-          dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Avbryt") } },
-          title = { Text("Ny prompt") },
+          dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } },
+          title = { Text("New Prompt") },
           text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              OutlinedTextField(t, { t = it }, label = { Text("Titel") })
-              OutlinedTextField(s, { s = it }, label = { Text("Systeminstruktion") })
+            LazyColumn(
+              modifier = Modifier.heightIn(max = 400.dp).imePadding(),
+              verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              item { OutlinedTextField(t, { t = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
+              item { OutlinedTextField(s, { s = it }, label = { Text("System Instruction") }, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)) }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Grounding with Google Search", modifier = Modifier.weight(1f))
+                  Switch(checked = useSearch, onCheckedChange = { useSearch = it })
+                  IconButton(onClick = { showGroundingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+                }
+              }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Thinking mode", modifier = Modifier.weight(1f))
+                  Switch(checked = thinkingEnabled, onCheckedChange = { thinkingEnabled = it })
+                  IconButton(onClick = { showThinkingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+                }
+              }
             }
           }
         )
       }
 
-      // Redigera prompt (egen)
+      // Edit prompt (custom)
       showEditId.value?.let { editP ->
         var t by remember { mutableStateOf(editP.title) }
         var s by remember { mutableStateOf(editP.systemText) }
+        var useSearch by remember { mutableStateOf(editP.useGoogleSearch) }
+        var thinkingEnabled by remember { mutableStateOf(editP.thinkingEnabled) }
         AlertDialog(
           onDismissRequest = { showEditId.value = null },
           confirmButton = {
             TextButton(onClick = {
         scope.launch {
-                vm.updatePrompt(editP.copy(title = t, systemText = s))
+                vm.updatePrompt(editP.copy(title = t, systemText = s, useGoogleSearch = useSearch, thinkingEnabled = thinkingEnabled, thinkingBudget = null))
                 customPrompts = vm.prompts()
                 showEditId.value = null
               }
-            }) { Text("Spara") }
+            }) { Text("Save") }
           },
-          dismissButton = { TextButton(onClick = { showEditId.value = null }) { Text("Avbryt") } },
-          title = { Text("Redigera prompt") },
+          dismissButton = { TextButton(onClick = { showEditId.value = null }) { Text("Cancel") } },
+          title = { Text("Edit Prompt") },
           text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              OutlinedTextField(t, { t = it }, label = { Text("Titel") })
-              OutlinedTextField(s, { s = it }, label = { Text("Systeminstruktion") })
+            LazyColumn(
+              modifier = Modifier.heightIn(max = 400.dp).imePadding(),
+              verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+              item { OutlinedTextField(t, { t = it }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth()) }
+              item { OutlinedTextField(s, { s = it }, label = { Text("System Instruction") }, modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp)) }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Grounding with Google Search", modifier = Modifier.weight(1f))
+                  Switch(checked = useSearch, onCheckedChange = { useSearch = it })
+                  IconButton(onClick = { showGroundingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+                }
+              }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Thinking mode", modifier = Modifier.weight(1f))
+                  Switch(checked = thinkingEnabled, onCheckedChange = { thinkingEnabled = it })
+                  IconButton(onClick = { showThinkingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+                }
+              }
             }
           }
         )
@@ -297,57 +395,56 @@ fun AppUI(vm: MainViewModel = viewModel()) {
 
       // (Inga inbyggda specialfall – allt lever i DB)
 
-      // (Kontextmeny via AlertDialog borttagen – per‑chip meny används)
+      // Context menu via AlertDialog removed – per-chip menu is used
 
       suspend fun runFlow() {
-        // Stoppa loopen: kör bara ett segment per tryck
+        // Stop the loop: run only one segment per tap
         vm.moreSegmentsDecider = { _, _ -> false }
         if (!micPerm.status.isGranted) {
-          Toast.makeText(ctx, "Mikrofonbehörighet saknas", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "Microphone permission missing", Toast.LENGTH_SHORT).show()
           return
         }
         if (!android.speech.SpeechRecognizer.isRecognitionAvailable(ctx)) {
-          Toast.makeText(ctx, "Taletigenkänning saknas på enheten", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "Speech recognition not available on device", Toast.LENGTH_SHORT).show()
           return
         }
         if (apiKey.isBlank()) {
-          Toast.makeText(ctx, "Fyll i API-nyckel först", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "Please enter API key first", Toast.LENGTH_SHORT).show()
           return
         }
         try {
           vm.capture(1)
         } catch (t: Throwable) {
-          Toast.makeText(ctx, "Fel vid inspelning: ${t.message}", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "Recording error: ${t.message}", Toast.LENGTH_SHORT).show()
           return
         }
         if (vm.rawText.isBlank()) {
-          Toast.makeText(ctx, "Ingen röst fångades", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "No voice captured", Toast.LENGTH_SHORT).show()
           return
         }
         val custom = customPrompts.firstOrNull { it.title == selectedPrompt }
-        val promptText = custom?.systemText ?: "sammanfatta i punktform"
-        val p = se.olle.rostbubbla.data.Prompt(title = selectedPrompt ?: "Vald", systemText = promptText, vehikel = custom?.vehikel)
-        result = vm.callGemini(p, apiKey)
+        val promptText = custom?.systemText ?: "summarize in bullet points"
+        val p = se.olle.rostbubbla.data.Prompt(title = selectedPrompt ?: "Selected", systemText = promptText, vehikel = custom?.vehikel)
+        busy = true
+        retryMessage = null
+        result = vm.callGemini(p, apiKey) { att -> retryMessage = "Retrying… ($att)" }
+        busy = false
         if (result.isBlank() || result.startsWith("Fel vid AI-anrop:")) {
-          Toast.makeText(ctx, "AI-svar tomt eller fel", Toast.LENGTH_SHORT).show()
+          Toast.makeText(ctx, "AI response empty or error", Toast.LENGTH_SHORT).show()
         } else {
           val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
           cm.setPrimaryClip(android.content.ClipData.newPlainText("AI", result))
-          // Låt systemets clipboard‑notis räcka
+          // Let the system clipboard notification suffice
         }
       }
 
-      // Prompt-picker dialog state
-      data class PromptPickState(val options: List<String>, val onPick: (String?) -> Unit)
-      var pickState by remember { mutableStateOf<PromptPickState?>(null) }
-
-      // UI för promptval
+      // Prompt picker UI
       pickState?.let { st ->
         AlertDialog(
           onDismissRequest = { st.onPick(null); pickState = null },
           confirmButton = {},
-          dismissButton = { TextButton(onClick = { st.onPick(null); pickState = null }) { Text("Avbryt") } },
-          title = { Text("Välj prompt") },
+          dismissButton = { TextButton(onClick = { st.onPick(null); pickState = null }) { Text("Cancel") } },
+          title = { Text("Select Prompt") },
           text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
               st.options.forEach { opt ->
@@ -360,111 +457,155 @@ fun AppUI(vm: MainViewModel = viewModel()) {
 
       LaunchedEffect(act) {
         act?.pttFlow?.collect {
-          // Bubbel-flöde: 1) spela in 2) välj prompt (dialog) 3) Gemini
+          // Bubble flow: 1) record 2) pick prompt (dialog) 3) Gemini
           vm.moreSegmentsDecider = { _, _ -> false }
           if (!micPerm.status.isGranted) {
-            Toast.makeText(ctx, "Mikrofonbehörighet saknas", Toast.LENGTH_SHORT).show(); return@collect
+            Toast.makeText(ctx, "Microphone permission missing", Toast.LENGTH_SHORT).show(); return@collect
           }
           if (!android.speech.SpeechRecognizer.isRecognitionAvailable(ctx)) {
-            Toast.makeText(ctx, "Taletigenkänning saknas på enheten", Toast.LENGTH_SHORT).show(); return@collect
+            Toast.makeText(ctx, "Speech recognition not available on device", Toast.LENGTH_SHORT).show(); return@collect
           }
           if (apiKey.isBlank()) {
-            Toast.makeText(ctx, "Fyll i API-nyckel först", Toast.LENGTH_SHORT).show(); return@collect
+            Toast.makeText(ctx, "Please enter API key first", Toast.LENGTH_SHORT).show(); return@collect
           }
           try { vm.capture(1) } catch (t: Throwable) {
-            Toast.makeText(ctx, "Fel vid inspelning: ${t.message}", Toast.LENGTH_SHORT).show(); return@collect
+            Toast.makeText(ctx, "Recording error: ${t.message}", Toast.LENGTH_SHORT).show(); return@collect
           }
-          if (vm.rawText.isBlank()) { Toast.makeText(ctx, "Ingen röst fångades", Toast.LENGTH_SHORT).show(); return@collect }
+          if (vm.rawText.isBlank()) { Toast.makeText(ctx, "No voice captured", Toast.LENGTH_SHORT).show(); return@collect }
 
           val all = customPrompts.map { it.title }
           val cont = CompletableDeferred<String?>()
           pickState = PromptPickState(options = all) { choice -> cont.complete(choice) }
           val picked = cont.await()
           val custom = customPrompts.firstOrNull { it.title == picked }
-          val promptText = custom?.systemText ?: "sammanfatta i punktform"
-          val p = se.olle.rostbubbla.data.Prompt(title = picked ?: "Vald", systemText = promptText, vehikel = custom?.vehikel)
+          val promptText = custom?.systemText ?: "summarize in bullet points"
+          val p = se.olle.rostbubbla.data.Prompt(title = picked ?: "Selected", systemText = promptText, vehikel = custom?.vehikel)
           result = vm.callGemini(p, apiKey)
           if (result.isBlank() || result.startsWith("Fel vid AI-anrop:")) {
-            Toast.makeText(ctx, "AI-svar tomt eller fel", Toast.LENGTH_SHORT).show()
+            Toast.makeText(ctx, "AI response empty or error", Toast.LENGTH_SHORT).show()
           } else {
             val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
             cm.setPrimaryClip(android.content.ClipData.newPlainText("AI", result))
-            // Låt systemets clipboard‑notis räcka
+            // Let the system clipboard notification suffice
           }
-          // Startad från bubbla? Stanna kvar i bakgrunden, ta inte fokus
+          // Started from bubble? Stay in background, do not take focus
           if (startedHeadless) {
             act?.finish()
           }
         }
       }
 
-      // Lyssna-knappen borttagen – micken i bubblan används istället
+      // Listen button removed – mic in bubble is used instead
 
+      if (busy) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        CircularProgressIndicator(strokeWidth = 3.dp, modifier = Modifier.size(20.dp))
+        Text(retryMessage ?: "Working…", style = MaterialTheme.typography.bodySmall)
+      }
+      }
       if (result.isNotBlank()) {
-      OutlinedTextField(value = result, onValueChange = {}, modifier = Modifier.fillMaxWidth().height(160.dp), label = { Text("Resultat") })
+      OutlinedTextField(value = result, onValueChange = {}, modifier = Modifier.fillMaxWidth().height(160.dp), label = { Text("Result") })
       }
 
-      // Knappar för klistra/kopiera borttagna – bubbelflödet hanterar detta
+      // Copy/paste buttons removed – bubble flow handles this
+      }
     }
   }
   if (showAbout) {
+    val ctx = LocalContext.current
     AlertDialog(
       onDismissRequest = { showAbout = false },
       confirmButton = { TextButton(onClick = { showAbout = false }) { Text("OK") } },
       title = { Text("About TapScribe") },
       text = {
-        val ctx = LocalContext.current
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("TapScribe – voice to AI assistant with floating mic bubble.")
-          Divider()
-          Text("Created by", style = MaterialTheme.typography.titleSmall)
-          Text("Olle Söderqvist")
-          Divider()
-          Text("Get your Gemini API key", style = MaterialTheme.typography.titleSmall)
-          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("1) Go to https://aistudio.google.com")
-            Text("2) Log in with your Google account")
-            Text("3) Click Get API key and create new key")
-            Text("4) Copy and paste the key in the field at the top of the app")
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+          // Centrerad logga
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center
+          ) {
+            Image(
+              painter = painterResource(id = R.drawable.aiolle_logo),
+              contentDescription = "Aiolle Logo",
+              modifier = Modifier.size(80.dp),
+              contentScale = ContentScale.Fit
+            )
           }
-          Divider()
-          Text("Contact", style = MaterialTheme.typography.titleSmall)
-          val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
-          val linkedInText = buildAnnotatedString {
-            append("LinkedIn: ")
-            pushStringAnnotation(tag = "URL", annotation = "https://www.linkedin.com/in/olle-soderqvist/")
-            withStyle(linkStyle) { append("https://www.linkedin.com/in/olle-soderqvist/") }
-            pop()
-          }
-          ClickableText(text = linkedInText, onClick = { off ->
-            linkedInText.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
-              try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+          
+          LazyColumn(
+            modifier = Modifier.heightIn(max = 400.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            item {
+              Text("🎤 TapScribe – voice to AI assistant with floating mic bubble.", 
+                   style = MaterialTheme.typography.bodyMedium)
             }
-          })
+            
+            item { Divider() }
+            
+            item {
+              Text("👨‍💻 Created by", style = MaterialTheme.typography.titleSmall)
+            }
+            item { 
+              Text("Olle Söderqvist", 
+                   style = MaterialTheme.typography.bodyLarge,
+                   color = MaterialTheme.colorScheme.primary)
+            }
+            
+            item { Divider() }
+            
+            item {
+              Text("📞 Contact", style = MaterialTheme.typography.titleSmall)
+            }
+            
+            // LinkedIn länk
+            item {
+              val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
+              val linkedInText = buildAnnotatedString {
+                append("💼 LinkedIn: ")
+                pushStringAnnotation(tag = "URL", annotation = "https://www.linkedin.com/in/olle-soderqvist/")
+                withStyle(linkStyle) { append("linkedin.com/in/olle-soderqvist") }
+                pop()
+              }
+              ClickableText(text = linkedInText, onClick = { off ->
+                linkedInText.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
+                  try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+                }
+              })
+            }
 
-          val siteText = buildAnnotatedString {
-            append("Hemsida: ")
-            pushStringAnnotation(tag = "URL", annotation = "https://aiolle.se")
-            withStyle(linkStyle) { append("https://aiolle.se") }
-            pop()
-          }
-          ClickableText(text = siteText, onClick = { off ->
-            siteText.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
-              try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+            // Website länk
+            item {
+              val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
+              val siteText = buildAnnotatedString {
+                append("🌐 Website: ")
+                pushStringAnnotation(tag = "URL", annotation = "https://aiolle.se")
+                withStyle(linkStyle) { append("aiolle.se") }
+                pop()
+              }
+              ClickableText(text = siteText, onClick = { off ->
+                siteText.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
+                  try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+                }
+              })
             }
-          })
 
-          val policy = buildAnnotatedString {
-            val url = "https://raw.githubusercontent.com/Olleman82/TapScribe/main/PRIVACY_POLICY.md"
-            pushStringAnnotation(tag = "URL", annotation = url)
-            withStyle(linkStyle) { append("Privacy policy") }
-            pop()
-          }
-          ClickableText(text = policy, onClick = { off ->
-            policy.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
-              try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+            // Privacy policy länk
+            item {
+              val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
+              val policy = buildAnnotatedString {
+                val url = "https://raw.githubusercontent.com/Olleman82/TapScribe/main/PRIVACY_POLICY.md"
+                pushStringAnnotation(tag = "URL", annotation = url)
+                withStyle(linkStyle) { append("🔒 Privacy policy") }
+                pop()
+              }
+              ClickableText(text = policy, onClick = { off ->
+                policy.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
+                  try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+                }
+              })
             }
-          })
+          }
         }
       }
     )
@@ -529,6 +670,190 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           }
         }
       }
+    )
+  }
+
+
+  if (showAutoPromptInfo) {
+    AlertDialog(
+      onDismissRequest = { showAutoPromptInfo = false },
+      confirmButton = { TextButton(onClick = { showAutoPromptInfo = false }) { Text("OK") } },
+      title = { Text("Auto-Prompt Feature") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("🚀 What is auto-prompt:", style = MaterialTheme.typography.titleSmall)
+          Text("• Normally, you choose a prompt each time you use the bubble")
+          Text("• With auto-prompt enabled, one prompt is used automatically")
+          Text("• Perfect for hands-free operation when you always use the same prompt")
+          
+          Text("⚙️ How to set it up:", style = MaterialTheme.typography.titleSmall)
+          Text("• Enable 'Always use selected prompt'")
+          Text("• Tap 'Change' to select your default prompt")
+          Text("• The selected prompt will be used every time you tap the bubble")
+          
+          Text("💡 Use cases:", style = MaterialTheme.typography.titleSmall)
+          Text("• Email writing: Always use your 'Write Email' prompt")
+          Text("• Quick notes: Always use a 'Summarize' prompt")
+          Text("• Social media: Always use your 'WhatsApp' prompt")
+          
+          Text("🔄 To change prompts:", style = MaterialTheme.typography.titleSmall)
+          Text("• Disable auto-prompt to return to manual selection")
+          Text("• Or change the default prompt using the 'Change' button")
+        }
+      }
+    )
+  }
+
+  if (showGroundingInfo) {
+    AlertDialog(
+      onDismissRequest = { showGroundingInfo = false },
+      confirmButton = { TextButton(onClick = { showGroundingInfo = false }) { Text("OK") } },
+      title = { Text("Grounding with Google Search") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("When enabled, the model may use Google Search to ground its answer with sources.")
+          Text("This can improve factuality for tasks like research or drafting a LinkedIn post.")
+          Text("Note: responses may take longer when grounding is enabled.", style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    )
+  }
+
+  if (showThinkingInfo) {
+    AlertDialog(
+      onDismissRequest = { showThinkingInfo = false },
+      confirmButton = { TextButton(onClick = { showThinkingInfo = false }) { Text("OK") } },
+      title = { Text("Thinking mode") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("Let the model internally reason more before answering.")
+          Text("When enabled without a budget, the model uses an automatic budget per request (if the model supports it).", style = MaterialTheme.typography.bodySmall)
+          Text("Use for complex tasks where quality matters more than speed.", style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    )
+  }
+
+  // Welcome dialog for first-time users
+  if (showWelcome) {
+    val ctx = LocalContext.current
+    AlertDialog(
+      onDismissRequest = { showWelcome = false },
+      confirmButton = {},
+      dismissButton = {},
+      text = {
+        // After runtime permissions resolve, trigger overlay permission (last)
+        LaunchedEffect(requestedAll, multiPerms.permissions) {
+          if (requestedAll) {
+            if (!Settings.canDrawOverlays(ctx)) {
+              try { ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName))) } catch (_: Throwable) {}
+            }
+          }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+          LazyColumn(
+            modifier = Modifier.heightIn(max = 400.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+          ) {
+            item {
+              Text("🚀 Quick Setup Guide", 
+                   style = MaterialTheme.typography.titleMedium,
+                   color = MaterialTheme.colorScheme.primary)
+            }
+            
+            item {
+              Text("📝 Get your Gemini API key:", style = MaterialTheme.typography.titleSmall)
+            }
+            item { Text("• Go to https://aistudio.google.com") }
+            item { Text("• Log in with your Google account") }
+            item { Text("• Click 'Get API key' and create new key") }
+            item { Text("• Copy and paste the key in the field above") }
+            
+            item {
+              Text("🔐 Request permissions:", style = MaterialTheme.typography.titleSmall)
+            }
+            item { Text("• Tap 'Request All Permissions' button below") }
+            item { Text("• Grant microphone and notification access") }
+            item { Text("• Allow 'Display over other apps' permission") }
+            item { Text("• This enables the floating bubble to work") }
+            
+            item {
+              Text("♿ Optional - Enable Auto-Paste:", style = MaterialTheme.typography.titleSmall)
+            }
+            item { Text("• Tap 'Accessibility Settings' below") }
+            item { Text("• Find 'TapScribe: Paste in focused field'") }
+            item { Text("• Enable the service for automatic pasting") }
+            
+            item {
+              Text("✨ You're all set!", style = MaterialTheme.typography.titleSmall)
+            }
+            item { Text("• Add and edit your own prompts in the Prompts section") }
+            item { Text("• Start the floating bubble to begin using TapScribe") }
+            item { Text("• Long-press the bubble for more options") }
+            item { Divider() }
+            item { Text("Privacy & Gemini:", style = MaterialTheme.typography.titleSmall) }
+            item {
+              Text("If you use a free Gemini key via AI Studio, your text may be used by Google to improve models under their terms. Avoid sharing sensitive information.", style = MaterialTheme.typography.bodySmall)
+            }
+            item {
+              val linkStyle = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)
+              val policy = buildAnnotatedString {
+                append("Learn more: ")
+                pushStringAnnotation(tag = "URL", annotation = "https://raw.githubusercontent.com/Olleman82/TapScribe/main/PRIVACY_POLICY.md")
+                withStyle(linkStyle) { append("Privacy policy") }
+                pop()
+              }
+              val ctx = LocalContext.current
+              ClickableText(text = policy, onClick = { off ->
+                policy.getStringAnnotations("URL", off, off).firstOrNull()?.let { ann ->
+                  try { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(ann.item))) } catch (_: Throwable) {}
+                }
+              })
+            }
+          }
+          
+          // Separera knapparna från huvudinnehållet för bättre layout
+          Divider()
+          
+          // Knappar i en egen sektion med bättre spacing
+          Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+          ) {
+            Button(
+              onClick = {
+                requestedAll = true
+                multiPerms.launchMultiplePermissionRequest()
+              },
+              modifier = Modifier.fillMaxWidth()
+            ) { 
+              Text("Request All Permissions") 
+            }
+            
+            OutlinedButton(
+              onClick = {
+                try { ctx.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } catch (_: Throwable) {}
+              },
+              modifier = Modifier.fillMaxWidth()
+            ) { 
+              Text("Accessibility Settings") 
+            }
+            
+            // Centered "Got it!" button
+            Button(
+              onClick = { showWelcome = false },
+              modifier = Modifier.fillMaxWidth(),
+              colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+              )
+            ) { 
+              Text("Got it! ✨", style = MaterialTheme.typography.titleMedium)
+            }
+          }
+        }
+      },
+      title = { Text("Welcome to TapScribe! 🎤") }
     )
   }
 }
