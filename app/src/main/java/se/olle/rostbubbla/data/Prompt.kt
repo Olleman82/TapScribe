@@ -9,5 +9,9 @@ data class Prompt(
   @PrimaryKey(autoGenerate = true) val id: Long = 0,
   val title: String,
   val systemText: String,
-  val vehikel: String? = null
+  val vehikel: String? = null,
+  val useGoogleSearch: Boolean = false,
+  val thinkingBudget: Int? = null,
+  val thinkingEnabled: Boolean = false,
+  val useOpenAI: Boolean = false
 )

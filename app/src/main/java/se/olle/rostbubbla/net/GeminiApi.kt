@@ -16,7 +16,8 @@ interface GeminiApi {
 data class GenerateContentRequest(
   @Json(name = "systemInstruction") val systemInstruction: SystemInstruction? = null,
   @Json(name = "contents") val contents: List<Content>,
-  @Json(name = "generationConfig") val generationConfig: GenerationConfig? = null
+  @Json(name = "generationConfig") val generationConfig: GenerationConfig? = null,
+  @Json(name = "tools") val tools: List<Tool>? = null
 )
 data class SystemInstruction(@Json(name = "parts") val parts: List<Part>)
 data class Content(@Json(name = "role") val role: String, @Json(name = "parts") val parts: List<Part>)
@@ -28,6 +29,12 @@ data class GenerationConfig(
 data class ThinkingConfig(
   @Json(name = "thinkingBudget") val thinkingBudget: Int? = null
 )
+
+// Tools
+data class Tool(
+  @Json(name = "googleSearch") val googleSearch: GoogleSearch? = null
+)
+class GoogleSearch
 
 data class GenerateContentResponse(val candidates: List<Candidate>)
 data class Candidate(val content: Content)

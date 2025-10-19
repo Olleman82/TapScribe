@@ -16,7 +16,8 @@
         android:theme="@style/Theme.Rostbubbla">
 
         <activity android:name=".ui.MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -31,6 +32,15 @@
             android:excludeFromRecents="true"
             android:finishOnTaskLaunch="true"
             android:taskAffinity="se.olle.rostbubbla.speechui" />
+
+        <activity
+            android:name=".ui.OpenAIRecordingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:finishOnTaskLaunch="true"
+            android:taskAffinity="se.olle.rostbubbla.openai" />
 
         <service
             android:name=".overlay.OverlayService"

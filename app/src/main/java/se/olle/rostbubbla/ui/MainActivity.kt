@@ -123,9 +123,13 @@ fun AppUI(vm: MainViewModel = viewModel()) {
   var showAbout by remember { mutableStateOf(false) }
   var showAutoSteps by remember { mutableStateOf(false) }
   var showWelcome by remember { mutableStateOf(false) }
-    var showAutoPromptInfo by remember { mutableStateOf(false) }
-    var showGroundingInfo by remember { mutableStateOf(false) }
-    var showThinkingInfo by remember { mutableStateOf(false) }
+  var showAutoPromptInfo by remember { mutableStateOf(false) }
+  var showGroundingInfo by remember { mutableStateOf(false) }
+  var showThinkingInfo by remember { mutableStateOf(false) }
+  var showOpenAIInfo by remember { mutableStateOf(false) }
+  // Hoist info-bubble states for audio settings
+  var showGainInfo by remember { mutableStateOf(false) }
+  var showCarModeInfo by remember { mutableStateOf(false) }
   // Prompt-picker dialog state (declared early so other UI can use it)
   data class PromptPickState(val options: List<String>, val onPick: (String?) -> Unit)
   var pickState by remember { mutableStateOf<PromptPickState?>(null) }
@@ -153,6 +157,8 @@ fun AppUI(vm: MainViewModel = viewModel()) {
       val startedHeadless = remember(act) { (act?.intent?.getBooleanExtra("headless", false) == true) }
       val prefs = remember { ctx.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE) }
       var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
+      var openAIKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
+      var useOpenAI by remember { mutableStateOf(prefs.getBoolean("use_openai_transcription", false)) }
       
       // All prompts come from DB (seeded first time) - declared early so auto-prompt can use it
       var customPrompts by remember { mutableStateOf<List<se.olle.rostbubbla.data.Prompt>>(emptyList()) }
@@ -168,76 +174,175 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           prefs.edit().putBoolean("welcome_shown", true).apply()
         }
       }
-      OutlinedTextField(
-        value = apiKey,
-        onValueChange = {
-          apiKey = it
-          prefs.edit().putString("gemini_api_key", apiKey).apply()
-        },
-        label = { Text("Gemini API Key") },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth(),
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
-      )
 
+      // Quick Start Section - Main functionality
+      Text("🎤 Quick Start", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+      
       Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Button(onClick = {
-          if (!Settings.canDrawOverlays(ctx)) {
-            ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName)))
-          } else {
-            try {
-              ctx.startForegroundService(Intent(ctx, OverlayService::class.java))
-            } catch (t: Throwable) {
-              Toast.makeText(ctx, "Cannot start bubble: ${t.message}", Toast.LENGTH_SHORT).show()
-            }
-          }
-        }) { Text("Start Bubble") }
-
-        Button(onClick = { ctx.stopService(Intent(ctx, OverlayService::class.java)) }) { Text("Stop Bubble") }
-      }
-
-      // Setting: Auto-paste in focused text field via accessibility service
-      var autoPaste by remember { mutableStateOf(prefs.getBoolean("auto_paste", false)) }
-      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Auto-paste in active text field", modifier = Modifier.weight(1f))
-        IconButton(onClick = { showAutoSteps = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
-        Switch(checked = autoPaste, onCheckedChange = {
-          autoPaste = it
-          prefs.edit().putBoolean("auto_paste", autoPaste).apply()
-        })
-      }
-      Text("Pastes AI response directly into the text field that has focus.", style = MaterialTheme.typography.bodySmall)
-      Divider()
-      // Auto-prompt setting
-      var autoPromptEnabled by remember { mutableStateOf(prefs.getBoolean("auto_prompt_enabled", false)) }
-      var defaultPromptTitle by remember { mutableStateOf(prefs.getString("auto_prompt_title", "") ?: "") }
-      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("Always use selected prompt", modifier = Modifier.weight(1f))
-        IconButton(onClick = { showAutoPromptInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
-        Switch(checked = autoPromptEnabled, onCheckedChange = {
-          autoPromptEnabled = it
-          prefs.edit().putBoolean("auto_prompt_enabled", autoPromptEnabled).apply()
-        })
-      }
-      if (autoPromptEnabled) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-          Text("Default prompt: ${if (defaultPromptTitle.isBlank()) "(not set)" else defaultPromptTitle}", modifier = Modifier.weight(1f))
-          Button(onClick = {
-            val all = customPrompts.map { it.title }
-            val cont = CompletableDeferred<String?>()
-            pickState = PromptPickState(options = all) { choice -> cont.complete(choice) }
-            scope.launch {
-              val picked = cont.await()
-              if (picked != null) {
-                defaultPromptTitle = picked
-                prefs.edit().putString("auto_prompt_title", picked).apply()
+        Button(
+          onClick = {
+            if (!Settings.canDrawOverlays(ctx)) {
+              ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + ctx.packageName)))
+            } else {
+              try {
+                ctx.startForegroundService(Intent(ctx, OverlayService::class.java))
+              } catch (t: Throwable) {
+                Toast.makeText(ctx, "Cannot start bubble: ${t.message}", Toast.LENGTH_SHORT).show()
               }
             }
-          }) { Text("Change") }
+          },
+          modifier = Modifier.weight(1f)
+        ) { Text("Start Bubble") }
+
+        Button(
+          onClick = { ctx.stopService(Intent(ctx, OverlayService::class.java)) },
+          modifier = Modifier.weight(1f)
+        ) { Text("Stop Bubble") }
+      }
+
+      Divider()
+
+      // Advanced Settings - Collapsible section
+      var showAdvancedSettings by remember { mutableStateOf(false) }
+      Row(
+        Modifier.fillMaxWidth().clickable { showAdvancedSettings = !showAdvancedSettings },
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+      ) {
+        Text("⚙️ Advanced Settings", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        Text(if (showAdvancedSettings) "▼" else "▶", style = MaterialTheme.typography.titleMedium)
+      }
+
+      if (showAdvancedSettings) {
+        // API Keys
+        Text("API Keys", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        
+        OutlinedTextField(
+          value = apiKey,
+          onValueChange = {
+            apiKey = it
+            prefs.edit().putString("gemini_api_key", apiKey).apply()
+          },
+          label = { Text("Gemini API Key") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          visualTransformation = PasswordVisualTransformation(),
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+
+        OutlinedTextField(
+          value = openAIKey,
+          onValueChange = {
+            openAIKey = it
+            prefs.edit().putString("openai_api_key", openAIKey).apply()
+          },
+          label = { Text("OpenAI API Key") },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          visualTransformation = PasswordVisualTransformation(),
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+
+        // OpenAI transcription switch (uses top-level showOpenAIInfo state)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Use OpenAI for transcription (instead of Google)", modifier = Modifier.weight(1f))
+          IconButton(onClick = { showOpenAIInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+          Switch(checked = useOpenAI, onCheckedChange = {
+            useOpenAI = it
+            prefs.edit().putBoolean("use_openai_transcription", useOpenAI).apply()
+          })
+        }
+
+        Divider()
+
+        // Audio section
+        Text("Audio", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Mic gain
+        var gainMode by remember { mutableStateOf(prefs.getString("gain_mode", "Off") ?: "Off") }
+        var manualGainDb by remember { mutableStateOf(prefs.getInt("manual_gain_db", 0)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Mic gain", modifier = Modifier.weight(1f))
+          IconButton(onClick = { showGainInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+          var expanded by remember { mutableStateOf(false) }
+          Box {
+            OutlinedButton(onClick = { expanded = true }) { Text(gainMode) }
+            DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+              listOf("Off", "Auto", "Manual").forEach { opt ->
+                DropdownMenuItem(text = { Text(opt) }, onClick = {
+                  gainMode = opt
+                  prefs.edit().putString("gain_mode", opt).apply()
+                  expanded = false
+                })
+              }
+            }
+          }
+        }
+        if (gainMode == "Manual") {
+          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Mic boost (dB)", modifier = Modifier.weight(1f))
+            // Simple stepper instead of Slider to keep diff minimal
+            OutlinedButton(onClick = { manualGainDb = (manualGainDb - 1).coerceIn(0, 12); prefs.edit().putInt("manual_gain_db", manualGainDb).apply() }) { Text("-") }
+            Text("$manualGainDb dB")
+            OutlinedButton(onClick = { manualGainDb = (manualGainDb + 1).coerceIn(0, 12); prefs.edit().putInt("manual_gain_db", manualGainDb).apply() }) { Text("+") }
+          }
+        }
+
+        // Car mode (auto mic gain on BT headset)
+        var carMode by remember { mutableStateOf(prefs.getBoolean("car_mode_bt_auto", false)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Car mode (auto mic gain on BT)", modifier = Modifier.weight(1f))
+          IconButton(onClick = { showCarModeInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+          Switch(checked = carMode, onCheckedChange = { on -> carMode = on; prefs.edit().putBoolean("car_mode_bt_auto", carMode).apply() })
+        }
+
+        // Section divider for clarity
+        Divider()
+
+        // Auto-paste setting
+        var autoPaste by remember { mutableStateOf(prefs.getBoolean("auto_paste", false)) }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Auto-paste in active text field", modifier = Modifier.weight(1f))
+          IconButton(onClick = { showAutoSteps = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
+          Switch(checked = autoPaste, onCheckedChange = {
+            autoPaste = it
+            prefs.edit().putBoolean("auto_paste", autoPaste).apply()
+          })
+        }
+
+        // Auto-prompt setting
+        var autoPromptEnabled by remember { mutableStateOf(prefs.getBoolean("auto_prompt_enabled", false)) }
+        var defaultPromptTitle by remember { mutableStateOf(prefs.getString("auto_prompt_title", "") ?: "") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text("Always use selected prompt", modifier = Modifier.weight(1f))
+          IconButton(onClick = { showAutoPromptInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Help") }
+          Switch(checked = autoPromptEnabled, onCheckedChange = {
+            autoPromptEnabled = it
+            prefs.edit().putBoolean("auto_prompt_enabled", autoPromptEnabled).apply()
+          })
+        }
+        if (autoPromptEnabled) {
+          Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Default prompt: ${if (defaultPromptTitle.isBlank()) "(not set)" else defaultPromptTitle}", modifier = Modifier.weight(1f))
+            Button(onClick = {
+              val all = customPrompts.map { it.title }
+              val cont = CompletableDeferred<String?>()
+              pickState = PromptPickState(options = all) { choice -> cont.complete(choice) }
+              scope.launch {
+                val picked = cont.await()
+                if (picked != null) {
+                  defaultPromptTitle = picked
+                  prefs.edit().putString("auto_prompt_title", picked).apply()
+                }
+              }
+            }) { Text("Change") }
+          }
         }
       }
-      // help opens in a small dialog via i-button
+
+      Divider()
+
+      // Prompts Section - Always visible
+      Text("📝 Prompts", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
       var selectedPrompt by remember { mutableStateOf<String?>(null) }
 
@@ -248,8 +353,6 @@ fun AppUI(vm: MainViewModel = viewModel()) {
       // Context menu state for long press on chips (must be declared before use below)
       data class PromptMenu(val title: String, val isBuiltIn: Boolean)
       var promptMenu by remember { mutableStateOf<PromptMenu?>(null) }
-
-      Text("Prompts", style = MaterialTheme.typography.titleMedium)
       LaunchedEffect(Unit) {
         val seeded = prefs.getBoolean("prompts_seeded_v1", false)
         if (!seeded) {
@@ -309,12 +412,13 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         var s by remember { mutableStateOf("") }
         var useSearch by remember { mutableStateOf(false) }
         var thinkingEnabled by remember { mutableStateOf(false) }
+        var useOpenAI by remember { mutableStateOf(false) }
         AlertDialog(
           onDismissRequest = { showAdd = false },
           confirmButton = {
             TextButton(onClick = {
               scope.launch {
-                vm.addPromptExtended(t, s, null, useSearch, null, thinkingEnabled)
+                vm.addPromptExtended(t, s, null, useSearch, null, thinkingEnabled, useOpenAI)
                 customPrompts = vm.prompts()
                 showAdd = false
               }
@@ -343,6 +447,12 @@ fun AppUI(vm: MainViewModel = viewModel()) {
                   IconButton(onClick = { showThinkingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
                 }
               }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Use OpenAI transcription for this prompt", modifier = Modifier.weight(1f))
+                  Switch(checked = useOpenAI, onCheckedChange = { useOpenAI = it })
+                }
+              }
             }
           }
         )
@@ -354,12 +464,13 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         var s by remember { mutableStateOf(editP.systemText) }
         var useSearch by remember { mutableStateOf(editP.useGoogleSearch) }
         var thinkingEnabled by remember { mutableStateOf(editP.thinkingEnabled) }
+        var useOpenAI by remember { mutableStateOf(editP.useOpenAI) }
         AlertDialog(
           onDismissRequest = { showEditId.value = null },
           confirmButton = {
             TextButton(onClick = {
         scope.launch {
-                vm.updatePrompt(editP.copy(title = t, systemText = s, useGoogleSearch = useSearch, thinkingEnabled = thinkingEnabled, thinkingBudget = null))
+                vm.updatePrompt(editP.copy(title = t, systemText = s, useGoogleSearch = useSearch, thinkingEnabled = thinkingEnabled, thinkingBudget = null, useOpenAI = useOpenAI))
                 customPrompts = vm.prompts()
                 showEditId.value = null
               }
@@ -386,6 +497,12 @@ fun AppUI(vm: MainViewModel = viewModel()) {
                   Text("Thinking mode", modifier = Modifier.weight(1f))
                   Switch(checked = thinkingEnabled, onCheckedChange = { thinkingEnabled = it })
                   IconButton(onClick = { showThinkingInfo = true }) { Icon(Icons.Outlined.Info, contentDescription = "Info") }
+                }
+              }
+              item {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text("Use OpenAI transcription for this prompt", modifier = Modifier.weight(1f))
+                  Switch(checked = useOpenAI, onCheckedChange = { useOpenAI = it })
                 }
               }
             }
@@ -648,6 +765,7 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           item { Text("• Identifies the text field that has focus") }
           item { Text("• Pastes AI responses directly into the field") }
           item { Text("• Saves you from manual copy/paste operations") }
+          item { Text("• Works with any app that has text input fields") }
           
           item {
             Text("🔍 Data usage:", style = MaterialTheme.typography.titleSmall)
@@ -672,7 +790,6 @@ fun AppUI(vm: MainViewModel = viewModel()) {
       }
     )
   }
-
 
   if (showAutoPromptInfo) {
     AlertDialog(
@@ -729,6 +846,68 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           Text("Let the model internally reason more before answering.")
           Text("When enabled without a budget, the model uses an automatic budget per request (if the model supports it).", style = MaterialTheme.typography.bodySmall)
           Text("Use for complex tasks where quality matters more than speed.", style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    )
+  }
+
+  if (showOpenAIInfo) {
+    AlertDialog(
+      onDismissRequest = { showOpenAIInfo = false },
+      confirmButton = { TextButton(onClick = { showOpenAIInfo = false }) { Text("OK") } },
+      title = { Text("OpenAI Realtime API") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("🎯 What is OpenAI Realtime API:", style = MaterialTheme.typography.titleSmall)
+          Text("• Replaces Google Speech Recognition with OpenAI's advanced speech-to-text")
+          Text("• Better accuracy and lower latency for Swedish language")
+          Text("• Real-time transcription with partial results")
+          
+          Text("💰 Costs:", style = MaterialTheme.typography.titleSmall)
+          Text("• Approximately $1 per hour of spoken audio")
+          Text("• Paid per usage through your OpenAI account")
+          Text("• No monthly fees or binding contracts")
+          
+          Text("🔧 Technical advantages:", style = MaterialTheme.typography.titleSmall)
+          Text("• GPT-4o-transcribe model for highest accuracy")
+          Text("• WebRTC connection for low latency")
+          Text("• Manual control over recording start/stop")
+          Text("• Visual feedback with audio waves")
+          
+          Text("⚠️ Requirements:", style = MaterialTheme.typography.titleSmall)
+          Text("• Valid OpenAI API key")
+          Text("• Internet connection during recording")
+          Text("• Microphone permission (same as Google Speech)")
+        }
+      }
+    )
+  }
+
+  // Info bubbles for new audio settings
+  if (showGainInfo) {
+    AlertDialog(
+      onDismissRequest = { showGainInfo = false },
+      confirmButton = { TextButton(onClick = { showGainInfo = false }) { Text("OK") } },
+      title = { Text("Mic gain") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("Auto: Gentle automatic level up to +12 dB, avoids clipping.")
+          Text("Manual: Fixed boost (0–12 dB). Use if Auto is too low or pumps.")
+          Text("Off: No software gain. Good if your device AGC is already strong.", style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    )
+  }
+
+  if (showCarModeInfo) {
+    AlertDialog(
+      onDismissRequest = { showCarModeInfo = false },
+      confirmButton = { TextButton(onClick = { showCarModeInfo = false }) { Text("OK") } },
+      title = { Text("Car mode (BT auto)") },
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text("When a BT headset is connected, automatic mic gain is enabled.")
+          Text("This boosts levels in noisy environments without changing the mic profile.")
         }
       }
     )

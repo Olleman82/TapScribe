@@ -5,17 +5,6 @@ plugins {
   id("kotlin-kapt")
 }
 
-// Optional release signing via local.properties or environment variables
-val localProps = java.util.Properties().apply {
-  val f = rootProject.file("local.properties")
-  if (f.exists()) f.inputStream().use { load(it) }
-}
-val releaseStoreFile = (localProps.getProperty("RELEASE_STORE_FILE") ?: System.getenv("RELEASE_STORE_FILE"))
-val releaseStorePassword = (localProps.getProperty("RELEASE_STORE_PASSWORD") ?: System.getenv("RELEASE_STORE_PASSWORD"))
-val releaseKeyAlias = (localProps.getProperty("RELEASE_KEY_ALIAS") ?: System.getenv("RELEASE_KEY_ALIAS"))
-val releaseKeyPassword = (localProps.getProperty("RELEASE_KEY_PASSWORD") ?: System.getenv("RELEASE_KEY_PASSWORD"))
-val hasSigning = !releaseStoreFile.isNullOrBlank() && file(releaseStoreFile!!).exists()
-
 android {
   namespace = "se.olle.rostbubbla"
   compileSdk = 35
@@ -24,21 +13,10 @@ android {
     applicationId = "se.olle.rostbubbla"
     minSdk = 26
     targetSdk = 35
-    versionCode = 4
-    versionName = "0.3.1"
+    versionCode = 5
+    versionName = "0.4.0"
 
     vectorDrawables { useSupportLibrary = true }
-  }
-
-  if (hasSigning) {
-    signingConfigs {
-      create("release") {
-        storeFile = file(releaseStoreFile!!)
-        storePassword = releaseStorePassword
-        keyAlias = releaseKeyAlias!!
-        keyPassword = releaseKeyPassword
-      }
-    }
   }
 
   buildTypes {
@@ -51,9 +29,6 @@ android {
         getDefaultProguardFile("proguard-android-optimize.txt"),
         "proguard-rules.pro"
       )
-      if (hasSigning) {
-        signingConfig = signingConfigs.getByName("release")
-      }
     }
   }
 
@@ -109,4 +84,6 @@ dependencies {
 
   // Accompanist permissions (optional nicety)
   implementation("com.google.accompanist:accompanist-permissions:0.36.0")
+  
+  // WebRTC dependency borttagen tills vidare (vi använder WebSocket för Realtime)
 }

@@ -30,7 +30,7 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
     .client(
       OkHttpClient.Builder()
         .addInterceptor(
-          HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY }
+          HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
         )
         .build()
     )
@@ -64,6 +64,9 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
   suspend fun addPrompt(title: String, system: String, vehikel: String?): Long =
     withContext(Dispatchers.IO) { dao.insert(Prompt(title = title, systemText = system, vehikel = vehikel)) }
 
+  suspend fun addPromptExtended(title: String, system: String, vehikel: String?, useSearch: Boolean, thinkingBudget: Int?, thinkingEnabled: Boolean, useOpenAI: Boolean = false): Long =
+    withContext(Dispatchers.IO) { dao.insert(Prompt(title = title, systemText = system, vehikel = vehikel, useGoogleSearch = useSearch, thinkingBudget = thinkingBudget, thinkingEnabled = thinkingEnabled, useOpenAI = useOpenAI)) }
+
   suspend fun updatePrompt(p: Prompt) =
     withContext(Dispatchers.IO) { dao.update(p) }
 
@@ -82,26 +85,42 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
     }
   }
 
-  suspend fun callGemini(p: Prompt, apiKey: String): String {
-    return try {
-      val system = buildString {
-        if (!p.vehikel.isNullOrBlank()) appendLine(p.vehikel)
-        append(p.systemText)
+  suspend fun callGemini(p: Prompt, apiKey: String, onRetry: ((Int) -> Unit)? = null): String {
+    val system = buildString {
+      if (!p.vehikel.isNullOrBlank()) appendLine(p.vehikel)
+      append(p.systemText)
+    }
+    val req = GenerateContentRequest(
+      systemInstruction = SystemInstruction(parts = listOf(Part(system))),
+      contents = listOf(Content(role = "user", parts = listOf(Part(rawText)))),
+      generationConfig = GenerationConfig(
+        temperature = 0.3,
+        thinkingConfig = if (p.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)
+      ),
+      tools = if (p.useGoogleSearch) listOf(Tool(googleSearch = GoogleSearch())) else null
+    )
+    return withContext(Dispatchers.IO) {
+      var lastError: Throwable? = null
+      repeat(3) { attempt ->
+        try {
+          val resp = gemini.generateContent("gemini-2.5-flash", apiKey, req)
+          val txt = resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          if (txt.isNotBlank()) return@withContext txt
+        } catch (t: Throwable) {
+          lastError = t
+          // If model rejects Search Grounding (400 INVALID_ARGUMENT), stop retrying immediately
+          val msg = t.message ?: ""
+          if (msg.contains("Search Grounding is not supported", ignoreCase = true)) {
+            return@withContext "AI error: Search Grounding not supported for this model/account"
+          }
+        }
+        if (attempt < 2) {
+          try { onRetry?.invoke(attempt + 1) } catch (_: Throwable) {}
+        }
+        // small backoff
+        try { kotlinx.coroutines.delay(300L * (attempt + 1)) } catch (_: Throwable) {}
       }
-      val req = GenerateContentRequest(
-        systemInstruction = SystemInstruction(parts = listOf(Part(system))),
-        contents = listOf(Content(role = "user", parts = listOf(Part(rawText)))),
-        generationConfig = GenerationConfig(
-          temperature = 0.3,
-          thinkingConfig = ThinkingConfig(thinkingBudget = 0)
-        )
-      )
-      val resp = withContext(Dispatchers.IO) {
-        gemini.generateContent("gemini-2.5-flash", apiKey, req)
-      }
-      resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.ifBlank { "(Tomt svar)" }.orEmpty()
-    } catch (t: Throwable) {
-      "Fel vid AI-anrop: ${t.message}"
+      lastError?.let { "Fel vid AI-anrop: ${it.message}" } ?: ""
     }
   }
 }

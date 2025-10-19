@@ -45,7 +45,7 @@ class OverlayService : Service() {
       .baseUrl("https://generativelanguage.googleapis.com/")
       .client(
         OkHttpClient.Builder()
-          .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY })
+          .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
           .build()
       )
       .addConverterFactory(
@@ -107,9 +107,16 @@ class OverlayService : Service() {
 
   private fun showMenu(anchor: View) {
     PopupMenu(this, anchor).apply {
-      menu.add(0, 1, 0, "Close Bubble")
+      menu.add(0, 0, 0, "Settings")
+      menu.add(0, 1, 1, "Close Bubble")
       setOnMenuItemClickListener { item ->
         when (item.itemId) {
+          0 -> { 
+            val i = Intent(this@OverlayService, MainActivity::class.java)
+            i.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            startActivity(i)
+            true 
+          }
           1 -> { hide(); true }
           else -> false
         }
@@ -133,47 +140,121 @@ class OverlayService : Service() {
       nm.createNotificationChannel(NotificationChannel(chId, "Overlay", NotificationManager.IMPORTANCE_LOW))
     }
     return NotificationCompat.Builder(this, chId)
-      // Använd en icke-adaptiv drawable som small icon för notiser
+      // Use a non-adaptive drawable as small icon for notifications
       .setSmallIcon(R.drawable.ic_launcher_foreground)
       .setContentTitle("Microphone Bubble Active")
       .setOngoing(true)
       .build()
   }
 
+  private fun updateNotificationStatus(text: String) {
+    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    val chId = "overlay"
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+      nm.createNotificationChannel(NotificationChannel(chId, "Overlay", NotificationManager.IMPORTANCE_LOW))
+    }
+    val n = NotificationCompat.Builder(this, chId)
+      .setSmallIcon(R.drawable.ic_launcher_foreground)
+      .setContentTitle("Microphone Bubble Active")
+      .setContentText(text)
+      .setOngoing(true)
+      .build()
+    nm.notify(1, n)
+  }
+
   private suspend fun runHeadlessFlow(anchor: View) {
     val apiKey = getSharedPreferences("settings", MODE_PRIVATE).getString("gemini_api_key", "").orEmpty()
     if (apiKey.isBlank()) {
-      Toast.makeText(this, "Fill in API key first", Toast.LENGTH_SHORT).show(); return
+      Toast.makeText(this@OverlayService, "Fill in API key first", Toast.LENGTH_SHORT).show(); return
     }
-    // 1) Lyssna via Google UI (transparent aktivitet) och vänta på resultat
-    val raw = withContext(Dispatchers.Main) { listenViaUi() }.orEmpty()
-    if (raw.isBlank()) { Toast.makeText(this, "No voice captured", Toast.LENGTH_SHORT).show(); return }
-    // 2) Välj prompt (popup meny)
-    val prompts = withContext(Dispatchers.IO) { dao.all() }
-    if (prompts.isEmpty()) { Toast.makeText(this, "No prompts", Toast.LENGTH_SHORT).show(); return }
-    val picked: Prompt = CompletableDeferred<Prompt?>().also { def ->
-      val menu = PopupMenu(this, anchor)
-      prompts.forEachIndexed { idx, p -> menu.menu.add(0, idx, idx, p.title) }
-      menu.setOnMenuItemClickListener { item ->
-        def.complete(prompts[item.itemId]); true
+    
+    // Check if OpenAI transcription is enabled globally
+    val globalUseOpenAI = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("use_openai_transcription", false)
+    val openAIKey = getSharedPreferences("settings", MODE_PRIVATE).getString("openai_api_key", "").orEmpty()
+    
+    // 1) Listen via OpenAI or Google UI and wait for result
+    val raw = withContext(Dispatchers.Main) { 
+      if (globalUseOpenAI && openAIKey.isNotBlank()) {
+        listenViaOpenAI()
+      } else {
+        if (globalUseOpenAI && openAIKey.isBlank()) {
+          Toast.makeText(this@OverlayService, "OpenAI API key required for OpenAI transcription", Toast.LENGTH_SHORT).show()
+          null
+        } else {
+          listenViaUi()
+        }
       }
-      menu.setOnDismissListener { if (!def.isCompleted) def.complete(null) }
-      menu.show()
-    }.await() ?: return
+    }.orEmpty()
+    if (raw.isBlank()) { 
+      if (globalUseOpenAI) {
+        Toast.makeText(this@OverlayService, "OpenAI transcription failed", Toast.LENGTH_SHORT).show()
+      } else {
+        Toast.makeText(this@OverlayService, "No voice captured", Toast.LENGTH_SHORT).show()
+      }
+      return 
+    }
+  // 2) Choose prompt (popup menu) or auto-prompt
+    val prompts = withContext(Dispatchers.IO) { dao.all() }
+    if (prompts.isEmpty()) { Toast.makeText(this@OverlayService, "No prompts", Toast.LENGTH_SHORT).show(); return }
+    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+    val autoEnabled = prefs.getBoolean("auto_prompt_enabled", false)
+    val autoTitle = prefs.getString("auto_prompt_title", null)
+    val picked: Prompt = if (autoEnabled && !autoTitle.isNullOrBlank()) {
+      prompts.firstOrNull { it.title == autoTitle } ?: prompts.first()
+    } else {
+      CompletableDeferred<Prompt?>().also { def ->
+        val menu = PopupMenu(this, anchor)
+        prompts.forEachIndexed { idx, p -> menu.menu.add(0, idx, idx, p.title) }
+        menu.setOnMenuItemClickListener { item ->
+          def.complete(prompts[item.itemId]); true
+        }
+        menu.setOnDismissListener { if (!def.isCompleted) def.complete(null) }
+        menu.show()
+      }.await() ?: return
+    }
     // 3) Gemini
     val system = picked.systemText
     val req = GenerateContentRequest(
       systemInstruction = SystemInstruction(parts = listOf(Part(system))),
       contents = listOf(Content(role = "user", parts = listOf(Part(raw)))),
-      generationConfig = GenerationConfig(temperature = 0.3, thinkingConfig = ThinkingConfig(thinkingBudget = 0))
+      generationConfig = GenerationConfig(temperature = 0.3, thinkingConfig = if (picked.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)),
+      tools = if (picked.useGoogleSearch) listOf(Tool(googleSearch = GoogleSearch())) else null
     )
-    val reply = withContext(Dispatchers.IO) {
-      try {
-        gemini.generateContent("gemini-2.5-flash", apiKey, req)
-          .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
-      } catch (t: Throwable) { "" }
+    withContext(Dispatchers.Main) {
+      val flags = buildList {
+        if (picked.thinkingEnabled) add("Thinking")
+        if (picked.useGoogleSearch) add("Google Search")
+      }.joinToString(" + ")
+      val label = if (flags.isBlank()) "Working…" else "Working… ($flags)"
+      Toast.makeText(this@OverlayService, label, Toast.LENGTH_SHORT).show()
+      updateNotificationStatus(label)
     }
-    if (reply.isBlank()) { Toast.makeText(this, "AI response empty", Toast.LENGTH_SHORT).show(); return }
+    val reply = withContext(Dispatchers.IO) {
+      var text = ""
+      var stop = false
+      repeat(3) { attempt ->
+        if (stop) return@withContext text
+        try {
+          text = gemini.generateContent("gemini-2.5-flash", apiKey, req)
+            .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          if (text.isNotBlank()) return@withContext text
+        } catch (t: Throwable) {
+          val msg = t.message ?: ""
+          if (msg.contains("Search Grounding is not supported", ignoreCase = true)) {
+            withContext(Dispatchers.Main) { Toast.makeText(this@OverlayService, "Search Grounding not supported", Toast.LENGTH_SHORT).show() }
+            stop = true
+            return@repeat
+          }
+        }
+        withContext(Dispatchers.Main) {
+          Toast.makeText(this@OverlayService, "Retrying… (${attempt + 1})", Toast.LENGTH_SHORT).show()
+        }
+        try { kotlinx.coroutines.delay(300L * (attempt + 1)) } catch (_: Throwable) {}
+      }
+      text
+    }
+    if (reply.isBlank()) { Toast.makeText(this@OverlayService, "AI response empty", Toast.LENGTH_SHORT).show(); return }
+    updateNotificationStatus("Done")
     val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("AI", reply))
     val autoPaste = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("auto_paste", false)
@@ -184,6 +265,37 @@ class OverlayService : Service() {
       }
     } else {
       // No extra toast; system shows clipboard notification
+    }
+  }
+
+  private suspend fun listenViaOpenAI(): String? = suspendCancellableCoroutine { cont ->
+    val apiKey = getSharedPreferences("settings", MODE_PRIVATE).getString("openai_api_key", "").orEmpty()
+    if (apiKey.isBlank()) {
+      if (!cont.isCompleted) cont.resume(null)
+      return@suspendCancellableCoroutine
+    }
+    
+    val filter = android.content.IntentFilter(se.olle.rostbubbla.ACTIONS.ACTION_STT_RESULT)
+    val receiver = object : android.content.BroadcastReceiver() {
+      override fun onReceive(context: Context, intent: Intent) {
+        try { unregisterReceiver(this) } catch (_: Throwable) {}
+        val text = intent.getStringExtra(se.olle.rostbubbla.ACTIONS.EXTRA_STT_TEXT)
+        if (!cont.isCompleted) cont.resume(text)
+      }
+    }
+    registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+    val i = Intent(this, se.olle.rostbubbla.ui.OpenAIRecordingActivity::class.java).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      putExtra("api_key", apiKey)
+    }
+    try {
+      startActivity(i)
+    } catch (t: Throwable) {
+      try { unregisterReceiver(receiver) } catch (_: Throwable) {}
+      if (!cont.isCompleted) cont.resume(null)
+    }
+    cont.invokeOnCancellation {
+      try { unregisterReceiver(receiver) } catch (_: Throwable) {}
     }
   }
 
