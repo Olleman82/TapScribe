@@ -13,5 +13,11 @@ data class Prompt(
   val useGoogleSearch: Boolean = false,
   val thinkingBudget: Int? = null,
   val thinkingEnabled: Boolean = false,
-  val useOpenAI: Boolean = false
+  val useOpenAI: Boolean = false,
+  val isMailPrompt: Boolean = false,
+  val useMemoryList: Boolean = false,
+  val sendWebhook: Boolean = false,
+  val webhookToken: String? = null,
+  val webhookUrl: String? = null,
+  val webhookRawOnly: Boolean = false
 )

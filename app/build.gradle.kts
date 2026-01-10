@@ -13,10 +13,12 @@ android {
     applicationId = "se.olle.rostbubbla"
     minSdk = 26
     targetSdk = 35
-    versionCode = 5
-    versionName = "0.4.0"
+    versionCode = 10
+    versionName = "0.6.0"
 
     vectorDrawables { useSupportLibrary = true }
+    // Begränsa resursspråk för att undvika AAPT2-problem med externa lokaler
+    resConfigs("en", "sv")
   }
 
   buildTypes {
@@ -60,6 +62,7 @@ dependencies {
   androidTestImplementation(composeBom)
 
   implementation("androidx.core:core-ktx:1.13.1")
+  // implementation("androidx.appcompat:appcompat:1.7.0")
   implementation("androidx.activity:activity-compose:1.9.2")
   implementation("androidx.compose.ui:ui")
   implementation("androidx.compose.ui:ui-tooling-preview")

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Auto-paste info dialog arrays -->
+  <string-array name="auto_paste_features">
+    <item>Automatically pastes AI-generated text into the focused field</item>
+    <item>Works in most apps with editable text fields</item>
+  </string-array>
+  <string-array name="auto_paste_data_usage">
+    <item>Processes your text locally for paste actions</item>
+    <item>Does not collect personal data</item>
+  </string-array>
+  <string-array name="auto_paste_activation_steps">
+    <item>Open system Accessibility settings</item>
+    <item>Enable TapScribe Accessibility service</item>
+  </string-array>
+
+  <!-- Auto-prompt info dialog arrays -->
+  <string-array name="auto_prompt_intro_points">
+    <item>Automatically selects a prompt based on your usage</item>
+    <item>Can speed up your workflow</item>
+  </string-array>
+  <string-array name="auto_prompt_setup_steps">
+    <item>Create or choose your favorite prompts</item>
+    <item>Enable auto-prompt in settings when desired</item>
+  </string-array>
+  <string-array name="auto_prompt_use_cases">
+    <item>Emails and messages</item>
+    <item>Summaries and notes</item>
+  </string-array>
+  <string-array name="auto_prompt_change_steps">
+    <item>Open settings and switch the selected prompt</item>
+  </string-array>
+
+  <!-- OpenAI realtime info dialog arrays -->
+  <string-array name="openai_overview_points">
+    <item>Realtime transcription over WebSocket</item>
+    <item>Low-latency streaming</item>
+  </string-array>
+  <string-array name="openai_cost_points">
+    <item>Usage-based pricing applies to transcription</item>
+  </string-array>
+  <string-array name="openai_advantage_points">
+    <item>Server-side VAD and partial transcripts</item>
+    <item>Robust streaming API</item>
+  </string-array>
+  <string-array name="openai_requirement_points">
+    <item>Requires an OpenAI API key</item>
+  </string-array>
+
+  <!-- Welcome dialog arrays -->
+  <string-array name="welcome_gemini_steps">
+    <item>Get a Gemini API key from Google AI Studio</item>
+    <item>Paste the key in settings</item>
+  </string-array>
+  <string-array name="welcome_permissions_steps">
+    <item>Grant microphone permission</item>
+    <item>Allow notifications (optional)</item>
+  </string-array>
+  <string-array name="welcome_auto_paste_steps">
+    <item>Enable Accessibility service for auto-paste (optional)</item>
+  </string-array>
+  <string-array name="welcome_ready_steps">
+    <item>Start the mic bubble and try a prompt</item>
+  </string-array>
+</resources>
+
+
+
+

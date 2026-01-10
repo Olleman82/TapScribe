@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- Auto-klistra in info dialog arrayer -->
+  <string-array name="auto_paste_features">
+    <item>Klistrar automatiskt in AI-genererad text i fokuserat fält</item>
+    <item>Fungerar i de flesta appar med redigerbara textfält</item>
+  </string-array>
+  <string-array name="auto_paste_data_usage">
+    <item>Hanterar din text lokalt för inklistring</item>
+    <item>Samlar inte in personuppgifter</item>
+  </string-array>
+  <string-array name="auto_paste_activation_steps">
+    <item>Öppna systemets inställningar för Tillgänglighet</item>
+    <item>Aktivera TapScribe-tjänsten för tillgänglighet</item>
+  </string-array>
+
+  <!-- Auto-prompt info dialog arrayer -->
+  <string-array name="auto_prompt_intro_points">
+    <item>Väljer automatiskt en prompt baserat på din användning</item>
+    <item>Kan snabba upp ditt arbetsflöde</item>
+  </string-array>
+  <string-array name="auto_prompt_setup_steps">
+    <item>Skapa eller välj dina favoritprompter</item>
+    <item>Aktivera autoprompt i inställningarna vid behov</item>
+  </string-array>
+  <string-array name="auto_prompt_use_cases">
+    <item>E-post och meddelanden</item>
+    <item>Sammanfattningar och anteckningar</item>
+  </string-array>
+  <string-array name="auto_prompt_change_steps">
+    <item>Öppna inställningar och byt vald prompt</item>
+  </string-array>
+
+  <!-- OpenAI realtime info dialog arrayer -->
+  <string-array name="openai_overview_points">
+    <item>Realtidstranskribering över WebSocket</item>
+    <item>Låg latens vid strömning</item>
+  </string-array>
+  <string-array name="openai_cost_points">
+    <item>Pris per användning gäller för transkribering</item>
+    <item>Kostnad cirka $1 per timme ljud</item>
+  </string-array>
+  <string-array name="openai_advantage_points">
+    <item>Server-side VAD och partiella transkript</item>
+    <item>Robust strömnings-API</item>
+  </string-array>
+  <string-array name="openai_requirement_points">
+    <item>Kräver en OpenAI API-nyckel</item>
+  </string-array>
+
+  <!-- Välkomstguide arrayer -->
+  <string-array name="welcome_gemini_steps">
+    <item>Skaffa en Gemini API-nyckel från Google AI Studio</item>
+    <item>Klistra in nyckeln i inställningarna</item>
+  </string-array>
+  <string-array name="welcome_permissions_steps">
+    <item>Ge behörighet för mikrofon</item>
+    <item>Tillåt aviseringar (valfritt)</item>
+  </string-array>
+  <string-array name="welcome_auto_paste_steps">
+    <item>Aktivera tillgänglighetstjänsten för autoklistra in (valfritt)</item>
+  </string-array>
+  <string-array name="welcome_ready_steps">
+    <item>Starta mikbubblan och testa en prompt</item>
+  </string-array>
+</resources>
+
+

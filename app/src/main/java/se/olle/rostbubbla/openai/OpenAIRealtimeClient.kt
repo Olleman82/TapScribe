@@ -38,7 +38,7 @@ class OpenAIRealtimeClient {
     private val _audioLevel = MutableSharedFlow<Float>()
     val audioLevel: SharedFlow<Float> = _audioLevel.asSharedFlow()
     
-    private val _connectionStatus = MutableSharedFlow<ConnectionStatus>()
+    private val _connectionStatus = MutableSharedFlow<ConnectionStatus>(replay = 1)
     val connectionStatus: SharedFlow<ConnectionStatus> = _connectionStatus.asSharedFlow()
     
     private var isConnected = false
@@ -87,8 +87,14 @@ class OpenAIRealtimeClient {
                         scope.launch {
                             _connectionStatus.emit(ConnectionStatus.CONNECTED)
                         }
-                        // Transkriptionssession: vänta på transcription_session.created innan update
-                        sessionReady = false
+                        // Starta inspelning omedelbart: initiala query-parametrar anger redan transkriptionsläget
+                        // Vi skickar fortfarande session.update när servern signalerar created, men blockera inte start
+                        sessionReady = true
+                        if (pendingStart && !isRecording) {
+                            pendingStart = false
+                            Log.d("OpenAIRealtimeClient", "Early start – starting recording on onOpen")
+                            startRecording()
+                        }
                     }
                     
                     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -162,13 +168,17 @@ class OpenAIRealtimeClient {
                                     put("model", "gpt-4o-transcribe")
                                     put("language", "sv")
                                 })
-                                // Keep server VAD but make it effectively "never auto-stop"
-                                // by using very conservative params; we'll commit on STOP.
+                                // Server VAD med automatisk timeout efter 10 sekunder kontinuerlig tystnad
+                                // för att undvika onödiga kostnader vid långa pauser.
+                                // OBS: Detta påverkar INTE kontinuerligt tal - användaren kan prata
+                                // så länge som önskat så länge det inte är tyst i 10 sekunder i sträck.
+                                // Timern återställs automatiskt när tal detekteras.
+                                // API-begränsning: max 10000ms (10 sekunder) - detta är maxvärdet.
                                 put("turn_detection", JSONObject().apply {
                                     put("type", "server_vad")
                                     put("threshold", 0.9) // hög tröskel för att undvika falska stopp
                                     put("prefix_padding_ms", 300)
-                                    put("silence_duration_ms", 10000) // max tillåten enligt API
+                                    put("silence_duration_ms", 10000) // 10 sekunder kontinuerlig tystnad - max tillåten enligt API
                                 })
                                 put("input_audio_format", "pcm16")
                             })
@@ -191,7 +201,17 @@ class OpenAIRealtimeClient {
                 "input_audio_buffer.committed" -> {
                     Log.d("OpenAIRealtimeClient", "Audio buffer committed, waiting for transcription")
                     hasUncommittedAudio = false
-                    allowSendingAudio = false
+                    // Om inspelningen fortfarande pågår när commit tas emot, betyder det att
+                    // VAD automatiskt committade efter 10 sekunder tystnad → stoppa inspelningen
+                    // för att undvika onödiga kostnader
+                    if (isRecording) {
+                        Log.d("OpenAIRealtimeClient", "Auto-commit detected (10s silence), stopping recording")
+                        isRecording = false
+                        allowSendingAudio = false
+                    } else {
+                        // Användaren stoppade manuellt
+                        allowSendingAudio = false
+                    }
                 }
                 "conversation.item.added" -> {
                     Log.d("OpenAIRealtimeClient", "Conversation item added")

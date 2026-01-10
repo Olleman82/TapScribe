@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -37,6 +38,7 @@ import kotlinx.coroutines.withTimeout
 import se.olle.rostbubbla.ACTIONS
 import se.olle.rostbubbla.openai.AudioRecorder
 import se.olle.rostbubbla.openai.OpenAIRealtimeClient
+import se.olle.rostbubbla.R
 import kotlin.math.*
 
 class OpenAIRecordingActivity : ComponentActivity() {
@@ -49,7 +51,7 @@ class OpenAIRecordingActivity : ComponentActivity() {
         
         apiKey = intent.getStringExtra("api_key") ?: ""
         if (apiKey.isBlank()) {
-            Toast.makeText(this@OpenAIRecordingActivity, "OpenAI API key missing", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_missing_api_key), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -110,21 +112,21 @@ class OpenAIRecordingActivity : ComponentActivity() {
                         // Lyssna på ljudfel
                         launch {
                             audioRecorder.error.collect { error ->
-                                Toast.makeText(this@OpenAIRecordingActivity, "Audio error: $error", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_audio_error, error), Toast.LENGTH_SHORT).show()
                                 finish()
                             }
                         }
                     }
                     else -> {
-                        Toast.makeText(this@OpenAIRecordingActivity, "Connection failed", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_connection_failed), Toast.LENGTH_SHORT).show()
                         finish()
                     }
                 }
             } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-                Toast.makeText(this@OpenAIRecordingActivity, "Connection timeout", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_connection_timeout), Toast.LENGTH_SHORT).show()
                 finish()
             } catch (e: Exception) {
-                Toast.makeText(this@OpenAIRecordingActivity, "Failed to start: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_start_failed, e.message ?: ""), Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -149,13 +151,13 @@ class OpenAIRecordingActivity : ComponentActivity() {
                         finish()
                     } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
                         Log.e("OpenAIRecordingActivity", "Transcription timeout")
-                        Toast.makeText(this@OpenAIRecordingActivity, "Transcription timeout", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_transcription_timeout), Toast.LENGTH_SHORT).show()
                         finish()
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         // Ignorera avbruten jobb när aktiviteten stängs normalt
                     } catch (e: Exception) {
                         Log.e("OpenAIRecordingActivity", "No transcription received: ${e.message}")
-                        Toast.makeText(this@OpenAIRecordingActivity, "No transcription received: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@OpenAIRecordingActivity, getString(R.string.openai_recorder_no_transcription, e.message ?: ""), Toast.LENGTH_SHORT).show()
                         finish()
                     }
                 }
@@ -163,8 +165,12 @@ class OpenAIRecordingActivity : ComponentActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
-        audioRecorder.cleanup()
-        openAIClient.cleanup()
+        try {
+            if (this::audioRecorder.isInitialized) audioRecorder.cleanup()
+        } catch (_: Throwable) { }
+        try {
+            if (this::openAIClient.isInitialized) openAIClient.cleanup()
+        } catch (_: Throwable) { }
     }
     
     @Composable
@@ -175,16 +181,16 @@ class OpenAIRecordingActivity : ComponentActivity() {
         var connectionStatus by remember { mutableStateOf(OpenAIRealtimeClient.ConnectionStatus.CONNECTING) }
         val context = LocalContext.current
 
-        // Beep when transitioning from CONNECTING -> CONNECTED
-        val toneGen = remember { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) }
+        // Beep when transitioning from CONNECTING -> CONNECTED (defensivt insvept)
+        val toneGen = remember { kotlin.runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) }.getOrNull() }
         DisposableEffect(Unit) {
-            onDispose { try { toneGen.release() } catch (_: Throwable) {} }
+            onDispose { kotlin.runCatching { toneGen?.release() } }
         }
         var prevStatus by remember { mutableStateOf(connectionStatus) }
         LaunchedEffect(connectionStatus) {
             if (prevStatus == OpenAIRealtimeClient.ConnectionStatus.CONNECTING &&
                 connectionStatus == OpenAIRealtimeClient.ConnectionStatus.CONNECTED) {
-                try { toneGen.startTone(ToneGenerator.TONE_PROP_ACK, 120) } catch (_: Throwable) {}
+                kotlin.runCatching { toneGen?.startTone(ToneGenerator.TONE_PROP_ACK, 120) }
             }
             prevStatus = connectionStatus
         }
@@ -229,10 +235,10 @@ class OpenAIRecordingActivity : ComponentActivity() {
                 // Status text (English)
                 Text(
                     text = when (connectionStatus) {
-                        OpenAIRealtimeClient.ConnectionStatus.CONNECTING -> "Connecting..."
-                        OpenAIRealtimeClient.ConnectionStatus.CONNECTED -> "Recording..."
-                        OpenAIRealtimeClient.ConnectionStatus.ERROR -> "Error"
-                        else -> "Disconnected"
+                        OpenAIRealtimeClient.ConnectionStatus.CONNECTING -> stringResource(R.string.openai_recorder_status_connecting)
+                        OpenAIRealtimeClient.ConnectionStatus.CONNECTED -> stringResource(R.string.openai_recorder_status_recording)
+                        OpenAIRealtimeClient.ConnectionStatus.ERROR -> stringResource(R.string.openai_recorder_status_error)
+                        else -> stringResource(R.string.openai_recorder_status_disconnected)
                     },
                     color = Color.White,
                     fontSize = 18.sp,
@@ -325,7 +331,7 @@ class OpenAIRecordingActivity : ComponentActivity() {
                         enabled = !isPressed
                     ) {
                         Text(
-                            text = if (isPressed) "..." else "STOP",
+                            text = if (isPressed) stringResource(R.string.openai_recorder_button_stop_pressed) else stringResource(R.string.openai_recorder_button_stop),
                             color = Color.White,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold
@@ -377,3 +383,5 @@ class OpenAIRecordingActivity : ComponentActivity() {
         )
     }
 }
+
+

@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- App -->
+  <string name="app_name">TapScribe</string>
+
+  <!-- Language options -->
+  <string name="section_localization">Språk</string>
+  <string name="label_app_language">Appspråk</string>
+  <string name="language_option_system">Systemstandard</string>
+  <string name="language_option_english">Engelska</string>
+  <string name="language_option_swedish">Svenska</string>
+  <string name="language_setting_description">Använder systemets språk som standard. Åsidosätt för att tvinga TapScribe till engelska eller svenska.</string>
+
+  <!-- Main toolbar -->
+  <string name="menu_getting_started">Kom igång</string>
+  <string name="menu_about">Om</string>
+
+  <!-- Quick start -->
+  <string name="section_quick_start">&#x1F3A4; Snabbstart</string>
+  <string name="button_start_bubble">Starta bubblan</string>
+  <string name="button_stop_bubble">Stoppa bubblan</string>
+  <string name="toast_cannot_start_bubble">Kan inte starta bubblan: %1$s</string>
+
+  <!-- Advanced settings -->
+  <string name="section_advanced_settings">&#x2699;&#xFE0F; Avancerade inställningar</string>
+  <string name="section_api_keys">API-nycklar</string>
+  <string name="label_gemini_api_key">Gemini API-nyckel</string>
+  <string name="label_openai_api_key">OpenAI API-nyckel</string>
+  <string name="label_use_openai_transcription">Använd OpenAI för transkribering (i stället för Google)</string>
+  <string name="section_audio">Ljud</string>
+  <string name="label_mic_gain">Mikrofonförstärkning</string>
+  <string name="gain_mode_off">Av</string>
+  <string name="gain_mode_auto">Auto</string>
+  <string name="gain_mode_manual">Manuell</string>
+  <string name="label_mic_boost">Mikrofonboost (dB)</string>
+  <string name="label_mic_boost_value">%1$d dB</string>
+  <string name="label_car_mode">Bil-läge (automatisk mic-gain på BT)</string>
+  <string name="label_auto_paste">Autoklistra in i aktivt textfält</string>
+  <string name="label_always_use_prompt">Använd alltid vald prompt</string>
+  <string name="label_default_prompt">Standardprompt: %1$s</string>
+  <string name="label_default_prompt_not_set">(inte valt)</string>
+
+  <!-- Prompts -->
+  <string name="section_prompts">&#x1F4DD; Promptar</string>
+  <string name="button_add_prompt">Lägg till prompt</string>
+  <string name="menu_prompt_edit">Redigera</string>
+  <string name="menu_prompt_delete">Ta bort</string>
+  <string name="button_change">Ändra</string>
+  <string name="dialog_new_prompt_title">Ny prompt</string>
+  <string name="dialog_edit_prompt_title">Redigera prompt</string>
+  <string name="dialog_select_prompt_title">Välj prompt</string>
+  <string name="field_prompt_title">Titel</string>
+  <string name="field_prompt_system_instruction">Systeminstruktion</string>
+  <string name="label_grounding">Grundning med Google Sök</string>
+  <string name="label_thinking_mode">Tänkeläge</string>
+  <string name="label_prompt_use_openai">Använd OpenAI-transkribering för den här prompten</string>
+  <string name="label_send_webhook">Skicka AI-svar till webhook</string>
+  <string name="label_webhook_token">Webhook-token</string>
+  <string name="label_webhook_url">Webhook-URL</string>
+  <string name="webhook_token_hint">Skickar AI-svaret till denna URL med din token i X-Webhook-Token.</string>
+  <string name="webhook_url_hint">POST JSON: { "text": "..." }\nHeaders: Content-Type: application/json, X-Webhook-Token: [TOKEN]</string>
+  <string name="label_webhook_raw_only">Skicka rå transkribering (ingen AI)</string>
+  <string name="button_save">Spara</string>
+  <string name="button_cancel">Avbryt</string>
+
+  <!-- Status -->
+  <string name="status_retrying">Försöker igen… (%1$d)</string>
+  <string name="status_working">Arbetar…</string>
+  <string name="label_result">Resultat</string>
+
+  <!-- Toasts -->
+  <string name="toast_microphone_permission_missing">Behörighet för mikrofon saknas</string>
+  <string name="toast_speech_not_available">Röstigenkänning finns inte på enheten</string>
+  <string name="toast_enter_api_key_first">Ange API-nyckel först</string>
+  <string name="toast_recording_error">Inspelningsfel: %1$s</string>
+  <string name="toast_no_voice_captured">Ingen röst fångades</string>
+  <string name="toast_ai_response_empty">AI-svar saknas eller innehåller fel</string>
+  <string name="webhook_toast_success">Webhook klar: %1$s</string>
+  <string name="webhook_toast_error">Webhook misslyckades: %1$s</string>
+  <string name="webhook_error_missing_token">Webhook-token saknas</string>
+
+  <!-- Prompt defaults -->
+  <string name="default_prompt_summary_instruction">Sammanfatta i punktform</string>
+  <string name="prompt_selected_placeholder">Vald</string>
+  <string name="clip_label_ai">AI</string>
+  <string name="default_prompt_email_title">Skriv e-post</string>
+  <string name="default_prompt_email_instruction">Du får text nedan som har talats in och transkriberats. Det betyder att vissa ord kan ha blivit fel och att punkt- och kommatecken ibland hamnar på fel plats. Om det står -Smiley- eller liknande vill jag troligen ha en smiley där. Din uppgift: Utgå från texten. Följ ton och flöde så långt det går men forma den till en färdig text för ett e-postmeddelande med bra formatering och skiljetecken på rätt plats. Du får göra små ändringar för att göra den grammatisk eller ta bort ord som inte verkar logiska eller hör hemma i mailet. Om användaren inte anger en avslutning ska du alltid avsluta med &quot;Med vänliga hälsningar Olle&quot;.\n\nSvara ENDAST med e-posttexten</string>
+  <string name="default_prompt_whatsapp_title">WhatsApp</string>
+  <string name="default_prompt_whatsapp_instruction">Skriv ett informellt meddelande utifrån den transkriberade texten nedan. Det ska skickas på WhatsApp till vänner eller familj. Tänk på att texten är transkriberad och att vissa ord kan bli fel. Försök förstå användarens avsikt utifrån sammanhanget. Lägg till några smileys (personer och tummen upp, inte massor av symboler som bilar osv.) om och när det passar. Försök skriva så nära användarens formulering som möjligt i övrigt. Börja bara med hej/tjena osv. OM användaren faktiskt började så.\n\nSvara endast med WhatsApp-meddelandet – inget annat!</string>
+
+  <!-- About dialog -->
+  <string name="dialog_about_title">Om TapScribe</string>
+  <string name="about_tagline">&#x1F3A4; TapScribe – röst till AI-assistent med svävande mikbubbla.</string>
+  <string name="about_created_by">&#x1F468;&#x200D;&#x1F4BB; Skapad av</string>
+  <string name="about_author_name">Olle Söderqvist</string>
+  <string name="about_contact">&#x1F4DE; Kontakt</string>
+  <string name="about_linkedin_prefix">&#x1F4BC; LinkedIn: </string>
+  <string name="about_linkedin_text">linkedin.com/in/olle-soderqvist</string>
+  <string name="about_linkedin_url">https://www.linkedin.com/in/olle-soderqvist/</string>
+  <string name="about_website_prefix">&#x1F310; Webbplats: </string>
+  <string name="about_website_text">aiolle.se</string>
+  <string name="about_privacy_policy">&#x1F512; Integritetspolicy</string>
+  <string name="cd_aiolle_logo">Aiolle-logotyp</string>
+
+  <!-- Generic buttons -->
+  <string name="button_ok">OK</string>
+  <string name="button_close">Stäng</string>
+  <string name="button_request_permissions">Begär alla behörigheter</string>
+  <string name="button_accessibility_settings">Tillgänglighetsinställningar</string>
+  <string name="button_open_app_settings">Öppna appinställningar</string>
+  <string name="button_open_accessibility">Öppna tillgänglighet</string>
+  <string name="button_got_it_celebrate">Jag är med! &#x2728;</string>
+
+  <!-- Content descriptions -->
+  <string name="cd_info">Info</string>
+  <string name="cd_help">Hjälp</string>
+
+  <!-- Errors -->
+  <string name="ai_request_error_prefix">Fel vid AI-anrop:</string>
+  <string name="error_search_grounding_not_supported">AI-fel: Sökgrundning stöds inte för den här modellen/kontot</string>
+
+  <!-- Auto-paste info dialog -->
+  <string name="dialog_auto_paste_title">Aktivera autoklistra in</string>
+  <string name="auto_paste_info_header">&#x1F512; Viktigt: information om tillgänglighetstjänsten</string>
+  <string name="auto_paste_info_body">TapScribe använder Androids tillgänglighetstjänster för att automatiskt klistra in AI-genererad text i det fokuserade textfältet.</string>
+  <string name="auto_paste_section_features">&#x1F4CB; Vad tjänsten gör:</string>
+  <string name="auto_paste_section_data_usage">&#x1F50D; Dataanvändning:</string>
+  <string name="auto_paste_section_activation">&#x2699;&#xFE0F; Aktiveringssteg för Android 13+:</string>
+  <string name="auto_paste_consent">När du aktiverar tjänsten samtycker du till att TapScribe använder tillgänglighetstjänsterna för att förbättra upplevelsen.</string>
+  
+
+  <!-- Auto-prompt info dialog -->
+  <string name="dialog_auto_prompt_title">Autoprompt</string>
+  <string name="auto_prompt_section_intro">&#x1F680; Vad är autoprompt:</string>
+  <string name="auto_prompt_section_setup">&#x2699;&#xFE0F; Så ställer du in det:</string>
+  <string name="auto_prompt_section_use_cases">&#x1F4A1; Användningsområden:</string>
+  <string name="auto_prompt_section_change">&#x1F504; Så ändrar du promptar:</string>
+  
+
+  <!-- Grounding info dialog -->
+  <string name="dialog_grounding_title">Grundning med Google Sök</string>
+  <string name="grounding_body_primary">När det är aktiverat kan modellen använda Google Sök för att grunda svaret med källor.</string>
+  <string name="grounding_body_secondary">Det kan förbättra faktakvaliteten för uppgifter som research eller ett LinkedIn-inlägg.</string>
+  <string name="grounding_body_note">Obs! Svaren kan ta längre tid när grundning är aktiverat.</string>
+
+  <!-- Thinking mode dialog -->
+  <string name="dialog_thinking_title">Tänkeläge</string>
+  <string name="thinking_body_primary">Låt modellen resonera internt lite längre innan den svarar.</string>
+  <string name="thinking_body_secondary">Utan budget använder modellen en automatisk budget per förfrågan (om modellen stödjer det).</string>
+  <string name="thinking_body_note">Använd för komplexa uppgifter där kvalitet är viktigare än hastighet.</string>
+
+  <!-- OpenAI realtime dialog -->
+  <string name="dialog_openai_title">OpenAI Realtime API</string>
+  <string name="openai_section_overview">&#x1F3AF; Vad är OpenAI Realtime API:</string>
+  <string name="openai_section_costs">&#x1F4B0; Kostnader:</string>
+  <string name="openai_section_advantages">&#x1F527; Tekniska fördelar:</string>
+  <string name="openai_section_requirements">&#x26A0;&#xFE0F; Krav:</string>
+  
+
+  <!-- Mic gain dialog -->
+  <string name="mic_gain_body_auto">Auto: Mjuk automatisk höjning upp till +12 dB, undviker distorsion.</string>
+  <string name="mic_gain_body_manual">Manuell: Fast boost (0–12 dB). Använd om Auto är för svagt eller pumpar.</string>
+  <string name="mic_gain_body_off">Av: Ingen mjukvaruförstärkning. Bra om enhetens egen AGC redan är stark.</string>
+
+  <!-- Car mode dialog -->
+  <string name="dialog_car_mode_title">Bil-läge (BT-auto)</string>
+  <string name="car_mode_body_primary">När ett BT-headset är anslutet aktiveras automatisk mic-gain.</string>
+  <string name="car_mode_body_secondary">Det höjer nivån i stökiga miljöer utan att ändra mikrofonprofilen.</string>
+
+  <!-- Welcome dialog -->
+  <string name="dialog_welcome_title">Välkommen till TapScribe!</string>
+  <string name="welcome_quick_setup_title">Snabbguide</string>
+  <string name="welcome_gemini_title">Skaffa din Gemini API-nyckel:</string>
+  <string name="welcome_permissions_title">Begär behörigheter:</string>
+  <string name="welcome_auto_paste_title">Valfritt – aktivera autoklistra in:</string>
+  <string name="welcome_privacy_title">Sekretess och Gemini:</string>
+  <string name="welcome_privacy_body">Om du använder en gratis Gemini-nyckel via AI Studio kan Google använda din text för att förbättra modellerna enligt sina villkor. Undvik att dela känslig information.</string>
+  <string name="welcome_learn_more_prefix">Läs mer: </string>
+  
+
+  <!-- Overlay service -->
+  <string name="overlay_channel_name">Överlägg</string>
+  <string name="overlay_notification_title">Mikrofonbubbla aktiv</string>
+  <string name="overlay_menu_settings">Inställningar</string>
+  <string name="overlay_menu_close">Stäng bubblan</string>
+  <string name="overlay_toast_missing_gemini_key">Fyll i API-nyckel först</string>
+  <string name="overlay_toast_missing_openai_key">OpenAI API-nyckel krävs för OpenAI-transkribering</string>
+  <string name="overlay_toast_openai_failed">OpenAI-transkribering misslyckades</string>
+  <string name="overlay_toast_no_voice">Ingen röst fångades</string>
+  <string name="overlay_toast_no_prompts">Inga promptar</string>
+  <string name="overlay_status_done">Klart</string>
+  <string name="overlay_status_working_flags">Arbetar… (%1$s)</string>
+  <string name="overlay_error_search_grounding">Sökgrundning stöds inte</string>
+
+  <string name="overlay_flag_thinking">Tänker</string>
+  <string name="overlay_flag_google_search">Google Sök</string>
+
+
+  <!-- OpenAI recorder -->
+  <string name="openai_recorder_missing_api_key">OpenAI API-nyckel saknas</string>
+  <string name="openai_recorder_audio_error">Ljudfel: %1$s</string>
+  <string name="openai_recorder_connection_failed">Anslutning misslyckades</string>
+  <string name="openai_recorder_connection_timeout">Anslutningen tidsutgick</string>
+  <string name="openai_recorder_start_failed">Kunde inte starta: %1$s</string>
+  <string name="openai_recorder_transcription_timeout">Transkriberingen tidsutgick</string>
+  <string name="openai_recorder_no_transcription">Ingen transkribering mottagen: %1$s</string>
+  <string name="openai_recorder_status_connecting">Ansluter...</string>
+  <string name="openai_recorder_status_recording">Spelar in...</string>
+  <string name="openai_recorder_status_error">Fel</string>
+  <string name="openai_recorder_status_disconnected">Frånkopplad</string>
+  <string name="openai_recorder_button_stop">STOP</string>
+  <string name="openai_recorder_button_stop_pressed">...</string>
+
+  <!-- Accessibility consent dialog -->
+  <string name="dialog_accessibility_consent_title">Samtycke för tillgänglighetstjänst</string>
+  <string name="accessibility_consent_body">TapScribe behöver tillgänglighetsbehörighet för att automatiskt klistra in AI-genererad text i textfält. Detta gör att appen kan förbättra din användarupplevelse genom att automatiskt infoga transkriberad text.</string>
+  <string name="accessibility_consent_data_usage">Dataanvändning: Tjänsten bearbetar endast text lokalt för klistra in-åtgärder och samlar inte in personuppgifter.</string>
+  <string name="button_accept_accessibility">Acceptera &amp; aktivera</string>
+  <string name="button_decline_accessibility">Avböj</string>
+
+  <!-- Mail prompt -->
+  <string name="label_mail_prompt">Mail-prompt</string>
+  <string name="dialog_mail_prompt_title">Mail-prompt</string>
+  <string name="mail_prompt_info_body">När aktiverat kommer AI:n att söka efter e-postadresser och komponera mejl automatiskt. Mejlklienten öppnas med alla fält förifyllda.</string>
+  <string name="mail_prompt_info_customization">Speca tonalitet, stil, signatur och formatering i din prompt-text.</string>
+  <string name="mail_prompt_info_requirements">Kräver Google Search och Thinking mode (aktiveras automatiskt)</string>
+  <string name="mail_prompt_info_example">Exempel: "Sök efter Daniel på företaget 123 i Uddevalla och skriv ett kort mejl om att jag blir fem minuter sen till vårt möte"</string>
+  <string name="mail_prompt_error_parse">Kunde inte tolka mejlinformation från AI-svar</string>
+  <string name="mail_prompt_error_no_email">Ingen e-postadress hittades</string>
+  <string name="mail_prompt_error_no_client">Ingen mejlklient tillgänglig</string>
+
+  <!-- Mail system prompt -->
+  <string name="mail_system_prompt_intro">Användaren kommer att be om att skicka ett mail till en person eller be om en mailadress.</string>
+  <string name="mail_system_prompt_step1">1. Sök upp personens e-postadress via Google Search</string>
+  <string name="mail_system_prompt_step2">2. Komponera ett mail baserat på vad användaren säger</string>
+  <string name="mail_system_prompt_format">Svara ALLTID i följande format:</string>
+  <string name="mail_system_prompt_email_to">EMAIL_TO: [e-postadress]</string>
+  <string name="mail_system_prompt_subject">SUBJECT: [ämnesrad]</string>
+  <string name="mail_system_prompt_body">BODY: [meddelandetext]</string>
+  <string name="mail_system_prompt_instructions">Följ användarens instruktioner nedan för tonalitet och stil:</string>
+
+  <string name="section_debug">Felsökning &amp; Support</string>
+  <string name="debug_logs_info">Loggar innehåller händelser och fel för att hjälpa till med felsökning. Inget känsligt innehåll loggas.</string>
+  <string name="debug_share_logs">Dela loggar</string>
+  <string name="debug_clear_logs">Rensa loggar</string>
+  <string name="debug_logs_cleared">Loggar rensade</string>
+  <string name="toast_debug_enabled">Utvecklarläge aktiverat</string>
+</resources>
+
