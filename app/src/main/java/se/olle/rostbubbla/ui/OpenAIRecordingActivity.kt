@@ -12,6 +12,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -179,7 +182,6 @@ class OpenAIRecordingActivity : ComponentActivity() {
         var partialText by remember { mutableStateOf("") }
         var audioLevel by remember { mutableStateOf(0f) }
         var connectionStatus by remember { mutableStateOf(OpenAIRealtimeClient.ConnectionStatus.CONNECTING) }
-        val context = LocalContext.current
 
         // Beep when transitioning from CONNECTING -> CONNECTED (defensivt insvept)
         val toneGen = remember { kotlin.runCatching { ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80) }.getOrNull() }
@@ -222,17 +224,21 @@ class OpenAIRecordingActivity : ComponentActivity() {
             }
         }
         
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.8f)),
-            contentAlignment = Alignment.Center
+                .background(Color.Black.copy(alpha = 0.8f))
+                .padding(vertical = 32.dp, horizontal = 24.dp)
+                .systemBarsPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
         ) {
+            // 1. Översta zonen: Status text & Laddning
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.wrapContentHeight()
             ) {
-                // Status text (English)
                 Text(
                     text = when (connectionStatus) {
                         OpenAIRealtimeClient.ConnectionStatus.CONNECTING -> stringResource(R.string.openai_recorder_status_connecting)
@@ -248,95 +254,108 @@ class OpenAIRecordingActivity : ComponentActivity() {
                 if (connectionStatus == OpenAIRealtimeClient.ConnectionStatus.CONNECTING) {
                     CircularProgressIndicator(color = Color.White)
                 }
-                
-                // Audio visualization
+            }
+
+            // 2. Mellersta zonen: Ljudvågor & Transkribering (Scrollbar & Flexibel)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 AudioVisualization(audioLevel = audioLevel)
                 
-                // Partial transcript
                 if (partialText.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Card(
                         modifier = Modifier
-                            .fillMaxWidth(0.8f)
-                            .padding(horizontal = 16.dp),
+                            .fillMaxWidth(0.9f)
+                            .weight(1f, fill = false),
+                        shape = RoundedCornerShape(24.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = Color.White.copy(alpha = 0.9f)
                         )
                     ) {
-                        Text(
-                            text = partialText,
-                            modifier = Modifier.padding(16.dp),
-                            color = Color.Black,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-                
-                // Stop button with visible pulsing animation when recording
-                val pulseScale by rememberInfiniteTransition(label = "pulse").animateFloat(
-                    initialValue = 1.0f,
-                    targetValue = 1.3f,
-                    animationSpec = infiniteRepeatable(
-                        animation = tween(800, easing = FastOutSlowInEasing),
-                        repeatMode = RepeatMode.Reverse
-                    ),
-                    label = "pulseScaleAnim"
-                )
-
-                var isPressed by remember { mutableStateOf(false) }
-                
-                Box(contentAlignment = Alignment.Center) {
-                    // Multiple pulsing rings when recording
-                    if (connectionStatus == OpenAIRealtimeClient.ConnectionStatus.CONNECTED) {
-                        repeat(3) { index ->
-                            val delay = index * 200
-                            val ringScale by rememberInfiniteTransition(label = "ring$index").animateFloat(
-                                initialValue = 0.8f,
-                                targetValue = 1.4f,
-                                animationSpec = infiniteRepeatable(
-                                    animation = tween(1200, delayMillis = delay, easing = FastOutSlowInEasing),
-                                    repeatMode = RepeatMode.Restart
-                                ),
-                                label = "ringScale$index"
-                            )
-                            Box(
-                                modifier = Modifier
-                                    .size(120.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Red.copy(alpha = 0.15f - index * 0.05f))
-                                    .graphicsLayer { 
-                                        scaleX = ringScale
-                                        scaleY = ringScale
-                                        alpha = if (ringScale > 1.2f) 0f else 1f
-                                    }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(20.dp)
+                        ) {
+                            Text(
+                                text = partialText,
+                                color = Color.Black,
+                                fontSize = 16.sp,
+                                lineHeight = 22.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.align(Alignment.Center)
                             )
                         }
                     }
-                    
-                    Button(
-                        onClick = {
-                            isPressed = true
-                            isRecording = false
-                            stopRecording()
-                        },
-                        modifier = Modifier
-                            .size(104.dp)
-                            .clip(CircleShape)
-                            .graphicsLayer { 
-                                scaleX = if (isPressed) 0.95f else 1f
-                                scaleY = if (isPressed) 0.95f else 1f
-                            },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isPressed) Color.Red.copy(alpha = 0.8f) else Color.Red
-                        ),
-                        enabled = !isPressed
-                    ) {
-                        Text(
-                            text = if (isPressed) stringResource(R.string.openai_recorder_button_stop_pressed) else stringResource(R.string.openai_recorder_button_stop),
-                            color = Color.White,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                }
+            }
+
+            // 3. Nedersta zonen: Stoppknapp (Alltid synlig)
+            var isPressed by remember { mutableStateOf(false) }
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                // Multiple pulsing rings when recording
+                if (connectionStatus == OpenAIRealtimeClient.ConnectionStatus.CONNECTED) {
+                    repeat(3) { index ->
+                        val delay = index * 200
+                        val ringScale by rememberInfiniteTransition(label = "ring$index").animateFloat(
+                            initialValue = 0.8f,
+                            targetValue = 1.4f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1200, delayMillis = delay, easing = FastOutSlowInEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "ringScale$index"
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(CircleShape)
+                                .background(Color.Red.copy(alpha = 0.15f - index * 0.05f))
+                                .graphicsLayer {
+                                    scaleX = ringScale
+                                    scaleY = ringScale
+                                    alpha = if (ringScale > 1.2f) 0f else 1f
+                                }
                         )
                     }
+                }
+
+                Button(
+                    onClick = {
+                        isPressed = true
+                        isRecording = false
+                        stopRecording()
+                    },
+                    modifier = Modifier
+                        .size(104.dp)
+                        .clip(CircleShape)
+                        .graphicsLayer {
+                            scaleX = if (isPressed) 0.95f else 1f
+                            scaleY = if (isPressed) 0.95f else 1f
+                        },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isPressed) Color.Red.copy(alpha = 0.8f) else Color.Red
+                    ),
+                    enabled = !isPressed
+                ) {
+                    Text(
+                        text = if (isPressed) stringResource(R.string.openai_recorder_button_stop_pressed) else stringResource(R.string.openai_recorder_button_stop),
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
         }
@@ -383,5 +402,4 @@ class OpenAIRecordingActivity : ComponentActivity() {
         )
     }
 }
-
 

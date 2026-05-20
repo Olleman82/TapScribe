@@ -1,14 +1,12 @@
 <en-US>
 New features:
-• Memory: Save links and text snippets for quick access in your prompts.
-• Reliability improvements for OnePlus/OxygenOS devices.
-• Custom Webhook URL support in Prompt Settings.
-• Developer Mode: Hidden debug logging for troubleshooting.
+• OpenRouter support for Gemini-powered prompts.
+• Updated OpenAI transcription view with a clearer recording and transcript flow.
+• Gemini 3.5 Flash support.
 </en-US>
 <sv-SE>
 Nyheter:
-• Minne: Spara länkar och textfragment för snabb åtkomst i dina promptar.
-• Förbättrad tillförlitlighet för OnePlus/OxygenOS-enheter.
-• Stöd för egen Webhook-URL i Promptinställningar.
-• Utvecklarläge: Dold felsökningsloggning för support.
+• Stöd för OpenRouter för Gemini-drivna promptar.
+• Uppdaterad transkriberingsvy för OpenAI med tydligare flöde för inspelning och transkribering.
+• Stöd för Gemini 3.5 Flash.
 </sv-SE>
