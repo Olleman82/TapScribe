@@ -27,7 +27,8 @@ data class GenerationConfig(
   @Json(name = "thinkingConfig") val thinkingConfig: ThinkingConfig? = null
 )
 data class ThinkingConfig(
-  @Json(name = "thinkingBudget") val thinkingBudget: Int? = null
+  @Json(name = "thinkingBudget") val thinkingBudget: Int? = null,
+  @Json(name = "thinkingLevel") val thinkingLevel: String? = null
 )
 
 // Tools

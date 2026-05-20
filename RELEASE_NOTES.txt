@@ -1,14 +1,14 @@
 <en-US>
 New features:
-• Reliability improvements for OnePlus/OxygenOS devices (Accessibility).
-• Added Custom Webhook URL support in Prompt Settings.
+• Memory: Save links and text snippets for quick access in your prompts.
+• Reliability improvements for OnePlus/OxygenOS devices.
+• Custom Webhook URL support in Prompt Settings.
 • Developer Mode: Hidden debug logging for troubleshooting.
-• Minor UI improvements and bug fixes.
 </en-US>
 <sv-SE>
 Nyheter:
-• Förbättrad tillförlitlighet för OnePlus/OxygenOS-enheter (Tillgänglighet).
+• Minne: Spara länkar och textfragment för snabb åtkomst i dina promptar.
+• Förbättrad tillförlitlighet för OnePlus/OxygenOS-enheter.
 • Stöd för egen Webhook-URL i Promptinställningar.
 • Utvecklarläge: Dold felsökningsloggning för support.
-• Mindre gränssnittsförbättringar och buggfixar.
 </sv-SE>

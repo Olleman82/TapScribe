@@ -26,6 +26,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import se.olle.rostbubbla.speech.SpeechRepo
 import android.widget.Toast
+import se.olle.rostbubbla.AiModelConfig
 import se.olle.rostbubbla.data.AppDb
 import se.olle.rostbubbla.data.Prompt
 import se.olle.rostbubbla.data.MemoryItem
@@ -74,6 +75,32 @@ class OverlayService : Service() {
       )
       .build()
     retrofit.create(GeminiApi::class.java)
+  }
+
+  private val openRouter by lazy {
+    val retrofit = Retrofit.Builder()
+      .baseUrl("https://openrouter.ai/api/v1/")
+      .client(
+        OkHttpClient.Builder()
+          .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC })
+          .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+          .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+          .build()
+      )
+      .addConverterFactory(
+        MoshiConverterFactory.create(
+          Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
+        )
+      )
+      .build()
+    retrofit.create(OpenRouterApi::class.java)
+  }
+
+  private fun selectedGeminiModel(): String {
+    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+    return AiModelConfig.normalizeGeminiModel(
+      prefs.getString(AiModelConfig.PREF_GEMINI_MODEL, AiModelConfig.GEMINI_2_5_FLASH)
+    )
   }
 
   override fun onCreate() {
@@ -183,14 +210,24 @@ class OverlayService : Service() {
 
   private suspend fun runHeadlessFlow(anchor: View) {
     DebugLogger.log(this, "Overlay", "runHeadlessFlow started")
-    val apiKey = getSharedPreferences("settings", MODE_PRIVATE).getString("gemini_api_key", "").orEmpty()
+    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+    val apiProvider = prefs.getString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE) ?: AiModelConfig.API_PROVIDER_GOOGLE
+    val apiKey = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+      prefs.getString("openrouter_api_key", "").orEmpty()
+    } else {
+      prefs.getString("gemini_api_key", "").orEmpty()
+    }
     if (apiKey.isBlank()) {
-      Toast.makeText(this@OverlayService, getString(R.string.overlay_toast_missing_gemini_key), Toast.LENGTH_SHORT).show(); return
+      val errMsg = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER)
+        R.string.overlay_toast_missing_openrouter_key
+      else
+        R.string.overlay_toast_missing_gemini_key
+      Toast.makeText(this@OverlayService, getString(errMsg), Toast.LENGTH_SHORT).show(); return
     }
     
     // Check if OpenAI transcription is enabled globally
-    val globalUseOpenAI = getSharedPreferences("settings", MODE_PRIVATE).getBoolean("use_openai_transcription", false)
-    val openAIKey = getSharedPreferences("settings", MODE_PRIVATE).getString("openai_api_key", "").orEmpty()
+    val globalUseOpenAI = prefs.getBoolean("use_openai_transcription", false)
+    val openAIKey = prefs.getString("openai_api_key", "").orEmpty()
     
     // 1) Listen via OpenAI or Google UI and wait for result
     val raw = withContext(Dispatchers.Main) { 
@@ -217,7 +254,7 @@ class OverlayService : Service() {
   // 2) Choose prompt (popup menu) or auto-prompt
     val prompts = withContext(Dispatchers.IO) { dao.all() }
     if (prompts.isEmpty()) { Toast.makeText(this@OverlayService, getString(R.string.overlay_toast_no_prompts), Toast.LENGTH_SHORT).show(); return }
-    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+    val geminiModel = selectedGeminiModel()
     val autoEnabled = prefs.getBoolean("auto_prompt_enabled", false)
     val autoTitle = prefs.getString("auto_prompt_title", null)
     val picked: Prompt = if (autoEnabled && !autoTitle.isNullOrBlank()) {
@@ -342,12 +379,46 @@ class OverlayService : Service() {
           }
         }
       }
+      val isGemini35 = geminiModel == AiModelConfig.GEMINI_3_5_FLASH
+
       val req = GenerateContentRequest(
         systemInstruction = SystemInstruction(parts = listOf(Part(system))),
         contents = listOf(Content(role = "user", parts = listOf(Part(raw)))),
-        generationConfig = GenerationConfig(temperature = 0.3, thinkingConfig = if (picked.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)),
+        generationConfig = GenerationConfig(
+          temperature = if (isGemini35) null else 0.3,
+          thinkingConfig = if (isGemini35) {
+            if (picked.thinkingEnabled) ThinkingConfig(thinkingLevel = "HIGH") else ThinkingConfig(thinkingLevel = "MINIMAL")
+          } else {
+            if (picked.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)
+          }
+        ),
         tools = if (picked.useGoogleSearch) listOf(Tool(googleSearch = GoogleSearch())) else null
       )
+
+      val openRouterModel = AiModelConfig.mapToOpenRouterModel(geminiModel)
+      val messagesList = buildList {
+        if (system.isNotBlank()) {
+          add(OpenRouterMessage(role = "system", content = system))
+        }
+        add(OpenRouterMessage(role = "user", content = raw))
+      }
+      val openRouterTemp = if (isGemini35) null else 0.3
+      val openRouterReasoningObj = when {
+        isGemini35 -> {
+          if (picked.thinkingEnabled) OpenRouterReasoning(effort = "high") else OpenRouterReasoning(effort = "minimal")
+        }
+        geminiModel == AiModelConfig.GEMINI_2_5_FLASH -> {
+          if (picked.thinkingEnabled) null else OpenRouterReasoning(max_tokens = 0)
+        }
+        else -> null
+      }
+      val openRouterReq = OpenRouterChatRequest(
+        model = openRouterModel,
+        messages = messagesList,
+        temperature = openRouterTemp,
+        reasoning = openRouterReasoningObj
+      )
+
       withContext(Dispatchers.Main) {
         val flags = buildList {
           if (picked.thinkingEnabled) add(getString(R.string.overlay_flag_thinking))
@@ -363,12 +434,18 @@ class OverlayService : Service() {
         repeat(3) { attempt ->
           if (stop) return@withContext text
           try {
-            text = gemini.generateContent("gemini-2.5-flash", apiKey, req)
-              .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
-        if (text.isNotBlank()) {
-            DebugLogger.log(this@OverlayService, "Overlay", "AI Response received: ${text.take(50)}...")
-            return@withContext text
-        }
+            text = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+              val authHeader = "Bearer $apiKey"
+              val resp = openRouter.chatCompletions(authHeader, openRouterReq)
+              resp.choices.firstOrNull()?.message?.content.orEmpty()
+            } else {
+              gemini.generateContent(geminiModel, apiKey, req)
+                .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+            }
+            if (text.isNotBlank()) {
+              DebugLogger.log(this@OverlayService, "Overlay", "AI Response received: ${text.take(50)}...")
+              return@withContext text
+            }
           } catch (t: Throwable) {
             val msg = t.message ?: ""
             if (msg.contains("Search Grounding is not supported", ignoreCase = true)) {
@@ -439,9 +516,19 @@ class OverlayService : Service() {
   }
 
   private suspend fun handleSaveToMemory(transcription: String) {
-    val apiKey = getSharedPreferences("settings", MODE_PRIVATE).getString("gemini_api_key", "").orEmpty()
+    val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+    val apiProvider = prefs.getString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE) ?: AiModelConfig.API_PROVIDER_GOOGLE
+    val apiKey = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+      prefs.getString("openrouter_api_key", "").orEmpty()
+    } else {
+      prefs.getString("gemini_api_key", "").orEmpty()
+    }
     if (apiKey.isBlank()) {
-      Toast.makeText(this@OverlayService, getString(R.string.overlay_toast_missing_gemini_key), Toast.LENGTH_SHORT).show()
+      val errMsg = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER)
+        R.string.overlay_toast_missing_openrouter_key
+      else
+        R.string.overlay_toast_missing_gemini_key
+      Toast.makeText(this@OverlayService, getString(errMsg), Toast.LENGTH_SHORT).show()
       return
     }
 
@@ -461,11 +548,26 @@ class OverlayService : Service() {
       Toast.makeText(this@OverlayService, "Skapar titel...", Toast.LENGTH_SHORT).show()
     }
 
+    val model = selectedGeminiModel()
+    val isGemini35 = model == AiModelConfig.GEMINI_3_5_FLASH
+
     // Generate title using AI
+    val systemPrompt = "Du är en assistent som skapar korta, beskrivande titlar för sparade resurser. Användarens text beskriver vad ett nytt minne ska kallas. Skapa en kort rubrik som ligger nära användarens formulering, max 10-12 ord. Svara endast i enkel Markdown, t.ex. '## Min bokningslänk för AI-föreläsningar'. Skriv inga länkar och ingen annan text."
+    
     val titleRequest = GenerateContentRequest(
-      systemInstruction = SystemInstruction(parts = listOf(Part("Du är en assistent som skapar korta, beskrivande titlar för sparade resurser. Användarens text beskriver vad ett nytt minne ska kallas. Skapa en kort rubrik som ligger nära användarens formulering, max 10-12 ord. Svara endast i enkel Markdown, t.ex. '## Min bokningslänk för AI-föreläsningar'. Skriv inga länkar och ingen annan text."))),
+      systemInstruction = SystemInstruction(parts = listOf(Part(systemPrompt))),
       contents = listOf(Content(role = "user", parts = listOf(Part(transcription)))),
-      generationConfig = GenerationConfig(temperature = 0.3)
+      generationConfig = GenerationConfig(temperature = if (isGemini35) null else 0.3)
+    )
+
+    val openRouterModel = AiModelConfig.mapToOpenRouterModel(model)
+    val openRouterReq = OpenRouterChatRequest(
+      model = openRouterModel,
+      messages = listOf(
+        OpenRouterMessage(role = "system", content = systemPrompt),
+        OpenRouterMessage(role = "user", content = transcription)
+      ),
+      temperature = if (isGemini35) null else 0.3
     )
 
     val rawTitle = withContext(Dispatchers.IO) {
@@ -473,9 +575,14 @@ class OverlayService : Service() {
       repeat(3) { attempt ->
         if (title.isNotBlank()) return@withContext title
         try {
-          title = gemini.generateContent("gemini-2.5-flash", apiKey, titleRequest)
-            .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
-            .trim()
+          title = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+            val authHeader = "Bearer $apiKey"
+            val resp = openRouter.chatCompletions(authHeader, openRouterReq)
+            resp.choices.firstOrNull()?.message?.content.orEmpty().trim()
+          } else {
+            gemini.generateContent(model, apiKey, titleRequest)
+              .candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty().trim()
+          }
           if (title.isNotBlank()) return@withContext title
         } catch (t: Throwable) {
           // Continue to retry
@@ -747,7 +854,6 @@ class DragTouchListener(
     return false
   }
 }
-
 
 
 

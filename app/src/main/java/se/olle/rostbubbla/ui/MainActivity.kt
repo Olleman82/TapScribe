@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import se.olle.rostbubbla.R
+import se.olle.rostbubbla.AiModelConfig
 import se.olle.rostbubbla.AppLanguage
 import se.olle.rostbubbla.PREF_APP_LANGUAGE
 import se.olle.rostbubbla.applyAppLanguage
@@ -205,8 +206,21 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         applyAppLanguage(selectedLanguage)
       }
       var apiKey by remember { mutableStateOf(prefs.getString("gemini_api_key", "") ?: "") }
+      var openrouterKey by remember { mutableStateOf(prefs.getString("openrouter_api_key", "") ?: "") }
+      var apiProvider by remember {
+        mutableStateOf(
+          prefs.getString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE) ?: AiModelConfig.API_PROVIDER_GOOGLE
+        )
+      }
       var openAIKey by remember { mutableStateOf(prefs.getString("openai_api_key", "") ?: "") }
       var useOpenAI by remember { mutableStateOf(prefs.getBoolean("use_openai_transcription", false)) }
+      var geminiModel by remember {
+        mutableStateOf(
+          AiModelConfig.normalizeGeminiModel(
+            prefs.getString(AiModelConfig.PREF_GEMINI_MODEL, AiModelConfig.GEMINI_2_5_FLASH)
+          )
+        )
+      }
       
       // All prompts come from DB (seeded first time) - declared early so auto-prompt can use it
       var customPrompts by remember { mutableStateOf<List<se.olle.rostbubbla.data.Prompt>>(emptyList()) }
@@ -579,6 +593,88 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           visualTransformation = PasswordVisualTransformation(),
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
         )
+
+        OutlinedTextField(
+          value = openrouterKey,
+          onValueChange = {
+            openrouterKey = it
+            prefs.edit().putString("openrouter_api_key", openrouterKey).apply()
+          },
+          label = { Text(stringResource(R.string.label_openrouter_api_key)) },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth(),
+          visualTransformation = PasswordVisualTransformation(),
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+        )
+
+        var apiProviderMenuExpanded by remember { mutableStateOf(false) }
+        Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(stringResource(R.string.label_api_provider), modifier = Modifier.weight(1f))
+          Box {
+            OutlinedButton(onClick = { apiProviderMenuExpanded = true }) {
+              Text(
+                if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER)
+                  stringResource(R.string.api_provider_openrouter)
+                else
+                  stringResource(R.string.api_provider_google)
+              )
+            }
+            DropdownMenu(
+              expanded = apiProviderMenuExpanded,
+              onDismissRequest = { apiProviderMenuExpanded = false }
+            ) {
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.api_provider_google)) },
+                onClick = {
+                  apiProvider = AiModelConfig.API_PROVIDER_GOOGLE
+                  prefs.edit().putString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE).apply()
+                  apiProviderMenuExpanded = false
+                }
+              )
+              DropdownMenuItem(
+                text = { Text(stringResource(R.string.api_provider_openrouter)) },
+                onClick = {
+                  apiProvider = AiModelConfig.API_PROVIDER_OPENROUTER
+                  prefs.edit().putString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_OPENROUTER).apply()
+                  apiProviderMenuExpanded = false
+                }
+              )
+            }
+          }
+        }
+
+        var geminiModelMenuExpanded by remember { mutableStateOf(false) }
+        Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+          Text(stringResource(R.string.label_gemini_model), modifier = Modifier.weight(1f))
+          Box {
+            OutlinedButton(onClick = { geminiModelMenuExpanded = true }) {
+              Text(AiModelConfig.geminiModelLabel(geminiModel))
+            }
+            DropdownMenu(
+              expanded = geminiModelMenuExpanded,
+              onDismissRequest = { geminiModelMenuExpanded = false }
+            ) {
+              AiModelConfig.geminiModels.forEach { option ->
+                DropdownMenuItem(
+                  text = { Text(AiModelConfig.geminiModelLabel(option)) },
+                  onClick = {
+                    geminiModel = option
+                    prefs.edit().putString(AiModelConfig.PREF_GEMINI_MODEL, option).apply()
+                    geminiModelMenuExpanded = false
+                  }
+                )
+              }
+            }
+          }
+        }
 
         // OpenAI transcription switch (uses top-level showOpenAIInfo state)
         Row(
@@ -1120,8 +1216,13 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           Toast.makeText(ctx, ctx.getString(R.string.toast_speech_not_available), Toast.LENGTH_SHORT).show()
           return
         }
-        if (apiKey.isBlank()) {
-          Toast.makeText(ctx, ctx.getString(R.string.toast_enter_api_key_first), Toast.LENGTH_SHORT).show()
+        val activeApiKey = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) openrouterKey else apiKey
+        if (activeApiKey.isBlank()) {
+          val errMsg = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER)
+            R.string.toast_enter_openrouter_key_first
+          else
+            R.string.toast_enter_api_key_first
+          Toast.makeText(ctx, ctx.getString(errMsg), Toast.LENGTH_SHORT).show()
           return
         }
         try {
@@ -1165,7 +1266,7 @@ fun AppUI(vm: MainViewModel = viewModel()) {
         }
         busy = true
         retryMessage = null
-        result = vm.callGemini(promptForCall, apiKey) { att ->
+        result = vm.callGemini(promptForCall, activeApiKey) { att ->
           retryMessage = ctx.getString(R.string.status_retrying, att)
         }
         busy = false
@@ -1226,8 +1327,13 @@ fun AppUI(vm: MainViewModel = viewModel()) {
           if (!android.speech.SpeechRecognizer.isRecognitionAvailable(ctx)) {
             Toast.makeText(ctx, ctx.getString(R.string.toast_speech_not_available), Toast.LENGTH_SHORT).show(); return@collect
           }
-          if (apiKey.isBlank()) {
-            Toast.makeText(ctx, ctx.getString(R.string.toast_enter_api_key_first), Toast.LENGTH_SHORT).show(); return@collect
+          val activeApiKey = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) openrouterKey else apiKey
+          if (activeApiKey.isBlank()) {
+            val errMsg = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER)
+              R.string.toast_enter_openrouter_key_first
+            else
+              R.string.toast_enter_api_key_first
+            Toast.makeText(ctx, ctx.getString(errMsg), Toast.LENGTH_SHORT).show(); return@collect
           }
           try { vm.capture(1) } catch (t: Throwable) {
             val message = t.message ?: t::class.java.simpleName
@@ -1270,7 +1376,7 @@ fun AppUI(vm: MainViewModel = viewModel()) {
             }
             return@collect
           }
-          result = vm.callGemini(promptForCall, apiKey)
+          result = vm.callGemini(promptForCall, activeApiKey)
           val aiErrorPrefix = ctx.getString(R.string.ai_request_error_prefix)
           if (result.isBlank() || result.startsWith(aiErrorPrefix)) {
             Toast.makeText(ctx, ctx.getString(R.string.toast_ai_response_empty), Toast.LENGTH_SHORT).show()

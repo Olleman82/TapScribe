@@ -26,6 +26,11 @@
   <string name="section_api_keys">API-nycklar</string>
   <string name="label_gemini_api_key">Gemini API-nyckel</string>
   <string name="label_openai_api_key">OpenAI API-nyckel</string>
+  <string name="label_openrouter_api_key">OpenRouter API-nyckel</string>
+  <string name="label_api_provider">API-leverantör</string>
+  <string name="api_provider_google">Google Gemini</string>
+  <string name="api_provider_openrouter">OpenRouter</string>
+  <string name="label_gemini_model">Gemini-modell</string>
   <string name="label_use_openai_transcription">Använd OpenAI för transkribering (i stället för Google)</string>
   <string name="section_audio">Ljud</string>
   <string name="label_mic_gain">Mikrofonförstärkning</string>
@@ -72,6 +77,7 @@
   <string name="toast_microphone_permission_missing">Behörighet för mikrofon saknas</string>
   <string name="toast_speech_not_available">Röstigenkänning finns inte på enheten</string>
   <string name="toast_enter_api_key_first">Ange API-nyckel först</string>
+  <string name="toast_enter_openrouter_key_first">Ange OpenRouter API-nyckel först</string>
   <string name="toast_recording_error">Inspelningsfel: %1$s</string>
   <string name="toast_no_voice_captured">Ingen röst fångades</string>
   <string name="toast_ai_response_empty">AI-svar saknas eller innehåller fel</string>
@@ -184,6 +190,7 @@
   <string name="overlay_menu_settings">Inställningar</string>
   <string name="overlay_menu_close">Stäng bubblan</string>
   <string name="overlay_toast_missing_gemini_key">Fyll i API-nyckel först</string>
+  <string name="overlay_toast_missing_openrouter_key">Fyll i OpenRouter API-nyckel först</string>
   <string name="overlay_toast_missing_openai_key">OpenAI API-nyckel krävs för OpenAI-transkribering</string>
   <string name="overlay_toast_openai_failed">OpenAI-transkribering misslyckades</string>
   <string name="overlay_toast_no_voice">Ingen röst fångades</string>
@@ -246,4 +253,3 @@
   <string name="debug_logs_cleared">Loggar rensade</string>
   <string name="toast_debug_enabled">Utvecklarläge aktiverat</string>
 </resources>
-

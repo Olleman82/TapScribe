@@ -12,6 +12,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.sqrt
 
 class OpenAIRealtimeClient {
+    companion object {
+        private const val REALTIME_TRANSCRIPTION_MODEL = "gpt-realtime-whisper"
+        private const val REALTIME_SAMPLE_RATE = 24000
+    }
+
     private var webSocket: WebSocket? = null
     private var client: OkHttpClient? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,7 +48,7 @@ class OpenAIRealtimeClient {
     
     private var isConnected = false
     private var isRecording = false
-    private val sampleRate = 24000
+    private val sampleRate = REALTIME_SAMPLE_RATE
     private var totalSamplesAppended: Long = 0
     
     enum class ConnectionStatus {
@@ -53,7 +58,7 @@ class OpenAIRealtimeClient {
         ERROR
     }
     
-    fun connect(apiKey: String, model: String = "gpt-4o-transcribe") {
+    fun connect(apiKey: String, model: String = REALTIME_TRANSCRIPTION_MODEL) {
         if (isConnected) {
             Log.w("OpenAIRealtimeClient", "Already connected")
             return
@@ -72,29 +77,17 @@ class OpenAIRealtimeClient {
                     "intent=transcription" +
                     "&input_audio_transcription.model=" + model +
                     "&input_audio_format=pcm16" +
-                    "&input_audio_rate=24000"
+                    "&input_audio_rate=" + REALTIME_SAMPLE_RATE
                 Log.d("OpenAIRealtimeClient", "Connecting to: $wsUrl")
                 val request = Request.Builder()
                     .url(wsUrl)
                     .addHeader("Authorization", "Bearer $apiKey")
-                    .addHeader("OpenAI-Beta", "realtime=v1")
                     .build()
                 
                 webSocket = client?.newWebSocket(request, object : WebSocketListener() {
                     override fun onOpen(webSocket: WebSocket, response: Response) {
                         Log.d("OpenAIRealtimeClient", "WebSocket connected")
                         isConnected = true
-                        scope.launch {
-                            _connectionStatus.emit(ConnectionStatus.CONNECTED)
-                        }
-                        // Starta inspelning omedelbart: initiala query-parametrar anger redan transkriptionsläget
-                        // Vi skickar fortfarande session.update när servern signalerar created, men blockera inte start
-                        sessionReady = true
-                        if (pendingStart && !isRecording) {
-                            pendingStart = false
-                            Log.d("OpenAIRealtimeClient", "Early start – starting recording on onOpen")
-                            startRecording()
-                        }
                     }
                     
                     override fun onMessage(webSocket: WebSocket, text: String) {
@@ -142,8 +135,6 @@ class OpenAIRealtimeClient {
         }
     }
     
-    private fun sendSessionConfig() { /* not used for transcription sessions */ }
-    
     private fun handleMessage(message: String) {
         try {
             val json = JSONObject(message)
@@ -153,50 +144,32 @@ class OpenAIRealtimeClient {
             
             when (type) {
                 "session.created" -> {
-                    Log.d("OpenAIRealtimeClient", "Session created successfully")
+                    val session = json.optJSONObject("session")
+                    if (session?.optString("type") == "transcription") {
+                        Log.d("OpenAIRealtimeClient", "Transcription session created; sending config")
+                        sendTranscriptionSessionConfig()
+                    } else {
+                        Log.d("OpenAIRealtimeClient", "Session created successfully")
+                    }
                 }
                 "session.updated" -> {
                     Log.d("OpenAIRealtimeClient", "Session updated successfully")
+                    sessionReady = true
+                    scope.launch {
+                        _connectionStatus.emit(ConnectionStatus.CONNECTED)
+                    }
+                    if (pendingStart && !isRecording) {
+                        pendingStart = false
+                        Log.d("OpenAIRealtimeClient", "Deferred start - starting recording now")
+                        startRecording()
+                    }
                 }
                 "transcription_session.created" -> {
-                    Log.d("OpenAIRealtimeClient", "Transcription session created; sending update for model/lang/VAD")
-                    try {
-                        val update = JSONObject().apply {
-                            put("type", "transcription_session.update")
-                            put("session", JSONObject().apply {
-                                put("input_audio_transcription", JSONObject().apply {
-                                    put("model", "gpt-4o-transcribe")
-                                    put("language", "sv")
-                                })
-                                // Server VAD med automatisk timeout efter 10 sekunder kontinuerlig tystnad
-                                // för att undvika onödiga kostnader vid långa pauser.
-                                // OBS: Detta påverkar INTE kontinuerligt tal - användaren kan prata
-                                // så länge som önskat så länge det inte är tyst i 10 sekunder i sträck.
-                                // Timern återställs automatiskt när tal detekteras.
-                                // API-begränsning: max 10000ms (10 sekunder) - detta är maxvärdet.
-                                put("turn_detection", JSONObject().apply {
-                                    put("type", "server_vad")
-                                    put("threshold", 0.9) // hög tröskel för att undvika falska stopp
-                                    put("prefix_padding_ms", 300)
-                                    put("silence_duration_ms", 10000) // 10 sekunder kontinuerlig tystnad - max tillåten enligt API
-                                })
-                                put("input_audio_format", "pcm16")
-                            })
-                        }
-                        webSocket?.send(update.toString())
-                        Log.d("OpenAIRealtimeClient", "Sent transcription_session.update")
-                    } catch (e: Exception) {
-                        Log.e("OpenAIRealtimeClient", "Failed to send transcription_session.update", e)
-                    }
+                    Log.d("OpenAIRealtimeClient", "Transcription session created")
+                    sendTranscriptionSessionConfig()
                 }
                 "transcription_session.updated" -> {
                     Log.d("OpenAIRealtimeClient", "Transcription session updated")
-                    sessionReady = true
-                    if (pendingStart && !isRecording) {
-                        pendingStart = false
-                        Log.d("OpenAIRealtimeClient", "Deferred start – starting recording now")
-                        startRecording()
-                    }
                 }
                 "input_audio_buffer.committed" -> {
                     Log.d("OpenAIRealtimeClient", "Audio buffer committed, waiting for transcription")
@@ -230,14 +203,14 @@ class OpenAIRealtimeClient {
                     }
                 }
                 "conversation.item.input_audio_transcription.delta" -> {
-                    val d = json.optString("text", json.optString("transcript", ""))
+                    val d = json.optString("delta", json.optString("text", json.optString("transcript", "")))
                     if (d.isNotEmpty()) {
                         Log.d("OpenAIRealtimeClient", "Transcription delta: $d")
                         scope.launch { _partialTranscript.emit(d) }
                     }
                 }
                 "conversation.item.input_audio_transcription.completed" -> {
-                    val text = json.optString("text", json.optString("transcript", ""))
+                    val text = json.optString("transcript", json.optString("text", ""))
                     if (text.isNotEmpty()) {
                         Log.d("OpenAIRealtimeClient", "Final transcript: $text")
                         scope.launch { _finalTranscript.emit(text) }
@@ -262,7 +235,10 @@ class OpenAIRealtimeClient {
                 "error" -> {
                     val error = json.optJSONObject("error")?.optString("message") ?: "Unknown error"
                     Log.e("OpenAIRealtimeClient", "Error: $error")
-                    scope.launch { _error.emit(error) }
+                    scope.launch {
+                        _connectionStatus.emit(ConnectionStatus.ERROR)
+                        _error.emit(error)
+                    }
                 }
                 "input_audio_buffer.speech_started" -> {
                     Log.d("OpenAIRealtimeClient", "speech_started")
@@ -273,11 +249,11 @@ class OpenAIRealtimeClient {
                 // response.* används inte i transkriptionssession
                 // Transcription-session events
                 "input_audio_transcription.delta" -> {
-                    val d = json.optString("text", json.optString("transcript", ""))
+                    val d = json.optString("delta", json.optString("text", json.optString("transcript", "")))
                     if (d.isNotEmpty()) scope.launch { _partialTranscript.emit(d) }
                 }
                 "input_audio_transcription.completed" -> {
-                    val text = json.optString("text", json.optString("transcript", ""))
+                    val text = json.optString("transcript", json.optString("text", ""))
                     if (text.isNotEmpty()) scope.launch { _finalTranscript.emit(text) }
                 }
                 "conversation.item.created" -> {
@@ -291,6 +267,33 @@ class OpenAIRealtimeClient {
             Log.e("OpenAIRealtimeClient", "Failed to parse message", e)
         }
     }
+
+    private fun sendTranscriptionSessionConfig() {
+        try {
+            val update = JSONObject().apply {
+                put("type", "session.update")
+                put("session", JSONObject().apply {
+                    put("type", "transcription")
+                    put("audio", JSONObject().apply {
+                        put("input", JSONObject().apply {
+                            put("format", JSONObject().apply {
+                                put("type", "audio/pcm")
+                                put("rate", REALTIME_SAMPLE_RATE)
+                            })
+                            put("transcription", JSONObject().apply {
+                                put("model", REALTIME_TRANSCRIPTION_MODEL)
+                                put("language", "sv")
+                            })
+                        })
+                    })
+                })
+            }
+            webSocket?.send(update.toString())
+            Log.d("OpenAIRealtimeClient", "Sent session.update for transcription")
+        } catch (e: Exception) {
+            Log.e("OpenAIRealtimeClient", "Failed to send session.update", e)
+        }
+    }
     
     fun startRecording() {
         if (!isConnected) {
@@ -300,7 +303,7 @@ class OpenAIRealtimeClient {
         
         if (!sessionReady) {
             pendingStart = true
-            Log.w("OpenAIRealtimeClient", "Session not ready yet (waiting for transcription_session.updated)")
+            Log.w("OpenAIRealtimeClient", "Session not ready yet (waiting for session.updated)")
             return
         }
         isRecording = true

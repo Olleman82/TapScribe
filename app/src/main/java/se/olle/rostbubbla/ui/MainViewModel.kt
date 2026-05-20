@@ -19,6 +19,7 @@ import se.olle.rostbubbla.data.MemoryItem
 import se.olle.rostbubbla.net.*
 import se.olle.rostbubbla.speech.SpeechRepo
 import se.olle.rostbubbla.R
+import se.olle.rostbubbla.AiModelConfig
 import java.util.regex.Pattern
 import se.olle.rostbubbla.debug.DebugLogger
 
@@ -58,6 +59,35 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
     )
     .build()
   private val gemini = retrofit.create(GeminiApi::class.java)
+
+  private val openRouterRetrofit = Retrofit.Builder()
+    .baseUrl("https://openrouter.ai/api/v1/")
+    .client(
+      OkHttpClient.Builder()
+        .addInterceptor(
+          HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
+        )
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    )
+    .addConverterFactory(
+      MoshiConverterFactory.create(
+        Moshi.Builder()
+          .add(KotlinJsonAdapterFactory())
+          .build()
+      )
+    )
+    .build()
+  private val openRouter = openRouterRetrofit.create(OpenRouterApi::class.java)
+
+  private fun selectedGeminiModel(): String {
+    val appContext = getApplication<Application>()
+    val prefs = appContext.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    return AiModelConfig.normalizeGeminiModel(
+      prefs.getString(AiModelConfig.PREF_GEMINI_MODEL, AiModelConfig.GEMINI_2_5_FLASH)
+    )
+  }
 
   suspend fun capture(maxSegments: Int = 3): String {
     rawText = ""
@@ -153,26 +183,69 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
       if (!p.vehikel.isNullOrBlank()) appendLine(p.vehikel)
       append(p.systemText)
     }
+    
+    val appContext = getApplication<Application>()
+    val prefs = appContext.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    val apiProvider = prefs.getString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE) ?: AiModelConfig.API_PROVIDER_GOOGLE
+    val model = selectedGeminiModel()
+    val isGemini35 = model == AiModelConfig.GEMINI_3_5_FLASH
+
+    // 1. Google Gemini Config
     val req = GenerateContentRequest(
       systemInstruction = SystemInstruction(parts = listOf(Part(system))),
       contents = listOf(Content(role = "user", parts = listOf(Part(rawText)))),
       generationConfig = GenerationConfig(
-        temperature = 0.3,
-        thinkingConfig = if (p.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)
+        temperature = if (isGemini35) null else 0.3,
+        thinkingConfig = if (isGemini35) {
+          if (p.thinkingEnabled) ThinkingConfig(thinkingLevel = "HIGH") else ThinkingConfig(thinkingLevel = "MINIMAL")
+        } else {
+          if (p.thinkingEnabled) ThinkingConfig(thinkingBudget = null) else ThinkingConfig(thinkingBudget = 0)
+        }
       ),
       tools = if (p.useGoogleSearch) listOf(Tool(googleSearch = GoogleSearch())) else null
     )
-    val appContext = getApplication<Application>()
+
+    // 2. OpenRouter Config
+    val openRouterModel = AiModelConfig.mapToOpenRouterModel(model)
+    val messagesList = buildList {
+      if (system.isNotBlank()) {
+        add(OpenRouterMessage(role = "system", content = system))
+      }
+      add(OpenRouterMessage(role = "user", content = rawText))
+    }
+    val openRouterTemp = if (isGemini35) null else 0.3
+    val openRouterReasoningObj = when {
+      isGemini35 -> {
+        if (p.thinkingEnabled) OpenRouterReasoning(effort = "high") else OpenRouterReasoning(effort = "minimal")
+      }
+      model == AiModelConfig.GEMINI_2_5_FLASH -> {
+        if (p.thinkingEnabled) null else OpenRouterReasoning(max_tokens = 0)
+      }
+      else -> null
+    }
+    val openRouterReq = OpenRouterChatRequest(
+      model = openRouterModel,
+      messages = messagesList,
+      temperature = openRouterTemp,
+      reasoning = openRouterReasoningObj
+    )
+
     return withContext(Dispatchers.IO) {
       var lastError: Throwable? = null
       repeat(3) { attempt ->
         try {
-          val resp = gemini.generateContent("gemini-2.5-flash", apiKey, req)
-          val txt = resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          val txt = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+            val authHeader = "Bearer $apiKey"
+            val resp = openRouter.chatCompletions(authHeader, openRouterReq)
+            resp.choices.firstOrNull()?.message?.content.orEmpty()
+          } else {
+            val resp = gemini.generateContent(model, apiKey, req)
+            resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          }
           if (txt.isNotBlank()) return@withContext txt
         } catch (t: Throwable) {
           lastError = t
-          DebugLogger.log(appContext, "MainViewModel", "Gemini API Error (Attempt ${attempt+1})", t)
+          DebugLogger.log(appContext, "MainViewModel", "API Error (Attempt ${attempt+1})", t)
           // If model rejects Search Grounding (400 INVALID_ARGUMENT), stop retrying immediately
           val msg = t.message.orEmpty()
           if (msg.contains("Search Grounding is not supported", ignoreCase = true)) {
@@ -195,6 +268,11 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
 
   suspend fun callGeminiForMail(p: Prompt, apiKey: String, rawText: String, onRetry: ((Int) -> Unit)? = null): MailResult {
     val appContext = getApplication<Application>()
+    val prefs = appContext.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    val apiProvider = prefs.getString(AiModelConfig.PREF_API_PROVIDER, AiModelConfig.API_PROVIDER_GOOGLE) ?: AiModelConfig.API_PROVIDER_GOOGLE
+    val model = selectedGeminiModel()
+    val isGemini35 = model == AiModelConfig.GEMINI_3_5_FLASH
+
     val system = buildString {
       // Dold systemdel för mail-prompt - nu lokaliserad
       appendLine(appContext.getString(R.string.mail_system_prompt_intro))
@@ -213,22 +291,58 @@ class MainViewModel(app: Application): AndroidViewModel(app) {
       append(p.systemText)
     }
     
+    // 1. Google Gemini Config
     val req = GenerateContentRequest(
       systemInstruction = SystemInstruction(parts = listOf(Part(system))),
       contents = listOf(Content(role = "user", parts = listOf(Part(rawText)))),
       generationConfig = GenerationConfig(
-        temperature = 0.3,
-        thinkingConfig = ThinkingConfig(thinkingBudget = null) // Alltid thinking för mail
+        temperature = if (isGemini35) null else 0.3,
+        thinkingConfig = if (isGemini35) {
+          ThinkingConfig(thinkingLevel = "HIGH") // Alltid thinking för mail
+        } else {
+          ThinkingConfig(thinkingBudget = null) // Alltid thinking för mail
+        }
       ),
       tools = listOf(Tool(googleSearch = GoogleSearch())) // Alltid grounding för mail
     )
     
+    // 2. OpenRouter Config
+    val openRouterModel = AiModelConfig.mapToOpenRouterModel(model)
+    val messagesList = buildList {
+      if (system.isNotBlank()) {
+        add(OpenRouterMessage(role = "system", content = system))
+      }
+      add(OpenRouterMessage(role = "user", content = rawText))
+    }
+    val openRouterTemp = if (isGemini35) null else 0.3
+    val openRouterReasoningObj = when {
+      isGemini35 -> {
+        OpenRouterReasoning(effort = "high") // Alltid thinking för mail
+      }
+      model == AiModelConfig.GEMINI_2_5_FLASH -> {
+        null // Alltid thinking för mail
+      }
+      else -> null
+    }
+    val openRouterReq = OpenRouterChatRequest(
+      model = openRouterModel,
+      messages = messagesList,
+      temperature = openRouterTemp,
+      reasoning = openRouterReasoningObj
+    )
+
     val response = withContext(Dispatchers.IO) {
       var lastError: Throwable? = null
       repeat(3) { attempt ->
         try {
-          val resp = gemini.generateContent("gemini-2.5-flash", apiKey, req)
-          val txt = resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          val txt = if (apiProvider == AiModelConfig.API_PROVIDER_OPENROUTER) {
+            val authHeader = "Bearer $apiKey"
+            val resp = openRouter.chatCompletions(authHeader, openRouterReq)
+            resp.choices.firstOrNull()?.message?.content.orEmpty()
+          } else {
+            val resp = gemini.generateContent(model, apiKey, req)
+            resp.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text.orEmpty()
+          }
           if (txt.isNotBlank()) return@withContext txt
         } catch (t: Throwable) {
           lastError = t

@@ -33,15 +33,17 @@
 
   <!-- OpenAI realtime info dialog arrays -->
   <string-array name="openai_overview_points">
-    <item>Realtime transcription over WebSocket</item>
-    <item>Low-latency streaming</item>
+    <item>Realtime transcription over WebSocket with gpt-realtime-whisper</item>
+    <item>Streams audio chunks and transcript deltas while you speak</item>
   </string-array>
   <string-array name="openai_cost_points">
-    <item>Usage-based pricing applies to transcription</item>
+    <item>Priced by audio duration, not text tokens</item>
+    <item>Current price is about $0.017 per audio minute</item>
+    <item>Long recordings cost more, so stop when you are done speaking</item>
   </string-array>
   <string-array name="openai_advantage_points">
     <item>Server-side VAD and partial transcripts</item>
-    <item>Robust streaming API</item>
+    <item>Lower waiting time after pressing stop than file-based transcription</item>
   </string-array>
   <string-array name="openai_requirement_points">
     <item>Requires an OpenAI API key</item>
